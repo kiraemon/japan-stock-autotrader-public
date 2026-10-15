@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>JSA — Market overview</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/dashboard.css">
+  <script src="/assets/dashboard.js" defer></script>
+</head>
+<body data-environment="{{.Environment}}">
+  <aside class="sidebar">
+    <a href="/?environment={{.Environment}}" class="brand" aria-label="JSA ホーム"><span class="brand-mark">j<span>↗</span></span><span>JSA<span class="brand-sub">JAPAN STOCK AUTOTRADER</span></span></a>
+    <div class="nav-label">WORKSPACE</div>
+    <nav aria-label="メイン"><a class="nav-item active" href="#overview"><span>◫</span> Overview <span class="nav-dot"></span></a><a class="nav-item" href="#quotes"><span>⌁</span> 保存された株価</a><a class="nav-item" href="#quality"><span>◇</span> データ品質</a></nav>
+    <div class="sidebar-bottom"><span class="local-dot"></span> LOCAL WORKSPACE<p>このPCの保存データを表示</p><div class="readonly-label">READ ONLY <span>↗</span></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div><span class="breadcrumb">Workspace</span><span class="slash">/</span>Overview</div><span class="topbar-meta">JST <span id="today">—</span><span class="divider"></span> LOCAL</span></header>
+    <main id="overview">
+      <section class="page-heading"><div><p class="eyebrow">MARKET OBSERVATORY</p><h1>収集の状況を、ひと目で。</h1><p class="intro">保存された相場データと、その品質を確認するワークスペース。</p></div><div class="heading-controls"><div class="environment-switch" aria-label="表示環境"><a href="/?environment=production" {{if eq .Environment "production"}}aria-current="page"{{end}}>本番</a><a href="/?environment=test" {{if eq .Environment "test"}}aria-current="page"{{end}}>検証</a></div><button id="refresh" type="button"><span aria-hidden="true">↻</span> 更新</button></div></section>
+      {{if .Demo}}<div class="notice demo-notice">DEMO <span>合成データのプレビューです。実際の相場・口座・収集結果ではありません。</span></div>{{end}}
+      <div id="connection-error" class="notice error-notice" role="alert" hidden>表示を更新できません。前回の表示が残っています。サーバーの起動状況を確認してください。</div>
+      <section class="metrics" aria-label="収集サマリー">
+        <article class="metric"><div class="metric-label">最終取得 <span>↙</span></div><div id="latest-time" class="metric-value">{{if .LatestAt}}{{clock .LatestAt}}{{else}}—{{end}}<small>JST</small></div><div id="latest-date" class="metric-caption">保存ファイルの取得完了時刻</div></article>
+        <article class="metric"><div class="metric-label">保存ファイル <span>▤</span></div><div class="metric-value"><span id="file-count">{{.Files}}</span><small>件</small></div><div id="file-caption" class="metric-caption">全保存期間の合計</div></article>
+        <article class="metric"><div class="metric-label">部分保存 <span>◷</span></div><div class="metric-value"><span id="incomplete-count">{{.IncompleteFiles}}</span><small>件</small></div><div class="metric-caption">取得途中で終了したファイル</div></article>
+        <article class="metric"><div class="metric-label">APIエラーの記録 <span>◇</span></div><div class="metric-value"><span id="api-error-count">{{if .Quality.Available}}{{.Quality.APIErrors}}{{else}}—{{end}}</span><small>件</small></div><div class="metric-caption">保存済みデータ内のエラー</div></article>
+      </section>
+      <div class="content-grid">
+        <div class="main-column">
+          <section class="panel chart-panel" aria-labelledby="chart-heading"><div class="panel-heading"><div><p class="eyebrow">SAVED QUOTES</p><h2 id="chart-heading">価格の記録</h2></div><span class="subtle-badge">直近60点まで</span></div>
+            <div class="quote-head"><div><div id="chart-name" class="quote-name">保存データを確認中</div><div id="chart-symbol" class="mono muted">—</div></div><div class="quote-value"><span id="chart-price">—</span><span class="currency"> JPY</span></div></div>
+            <div class="chart-wrap"><svg id="price-chart" viewBox="0 0 760 220" role="img" aria-labelledby="chart-title chart-desc"><title id="chart-title">保存された価格の散布図</title><desc id="chart-desc">横軸は受信時刻。点と点の間の値動きは再現していません。</desc><g id="chart-content"></g></svg><div id="chart-empty" class="chart-empty" hidden>まだ価格の記録がありません</div></div>
+            <div class="chart-foot"><span><i class="legend-dot"></i> 保存時の価格 / 横軸：受信時刻</span><span id="point-count" class="mono">— points</span></div>
+            <p class="panel-note">点の間の値動きは未収集です。表示価格は現在の約定可能価格を示しません。</p>
+          </section>
+          <section id="quotes" class="panel quotes-panel" aria-labelledby="quotes-heading"><div class="panel-heading"><div><p class="eyebrow">WATCHLIST</p><h2 id="quotes-heading">保存された株価</h2></div><span id="quote-count" class="subtle-badge">— 銘柄</span></div><div class="table-scroll"><table><thead><tr><th>銘柄</th><th class="number">保存価格</th><th>価格更新時刻 <span class="table-zone">JST</span></th><th>受信時刻 <span class="table-zone">JST</span></th></tr></thead><tbody id="quote-rows"></tbody></table></div><div id="quotes-empty" class="empty-message" hidden>保存された銘柄はありません。収集後にここへ表示されます。</div></section>
+        </div>
+        <div class="side-column">
+          <section id="quality" class="panel quality-panel" aria-labelledby="quality-heading"><div class="panel-heading"><div><p class="eyebrow">DATA QUALITY</p><h2 id="quality-heading">データ品質</h2></div><span class="quality-icon">◇</span></div><div id="quality-status" class="quality-status">確認中</div><p class="quality-copy">保存構造・必須項目のチェック</p><dl class="quality-list"><div><dt>不正なファイル</dt><dd id="invalid-count">—</dd></div><div><dt>価格の欠損</dt><dd id="missing-price">—</dd></div><div><dt>価格更新時刻の欠損</dt><dd id="missing-time">—</dd></div></dl><p id="quality-detail" class="panel-note">市場時間や鮮度の合否は判定していません。</p></section>
+          <section class="panel activity-panel" aria-labelledby="activity-heading"><div class="panel-heading"><div><p class="eyebrow">COLLECTION HISTORY</p><h2 id="activity-heading">最近の取得</h2></div></div><ol id="recent-list" class="activity-list"></ol><div id="recent-empty" class="empty-message" hidden>取得履歴はまだありません</div></section>
+          <div class="observation-note"><span>ⓘ</span><p>収集プロセスの稼働状態は未監視です。最終取得時刻から稼働中とは判断しません。</p></div>
+        </div>
+      </div>
+      <footer><span>JSA <span class="footer-separator">/</span> LOCAL DATA VIEW</span><span id="updated-at">画面データを確認中</span></footer>
+    </main>
+  </div>
+</body>
+</html>
