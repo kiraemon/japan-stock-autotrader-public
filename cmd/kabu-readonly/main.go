@@ -11,8 +11,8 @@ import (
 	"os/signal"
 	"strings"
 
-	"japan-stock-autotrader/internal/collector"
-	"japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader/internal/collector"
+	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 )
 
 func main() {

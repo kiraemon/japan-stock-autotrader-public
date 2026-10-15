@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 )
 
 // A run can be partial. Each record has its own receive time; snapshots are not atomic.
