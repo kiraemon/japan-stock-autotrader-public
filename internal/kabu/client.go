@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
 )
 
 type Environment string
@@ -34,14 +36,37 @@ func ValidateSymbol(symbol string) error {
 // Client contains credentials only in memory. It must not be logged or serialized.
 // Requests are serialized and spaced by at least 250ms. No automatic retries.
 type Client struct {
-	mu    sync.Mutex
-	base  string
-	http  *http.Client
-	token string
-	next  time.Time
+	mu     sync.Mutex
+	base   string
+	http   *http.Client
+	token  string
+	next   time.Time
+	closed bool
+	guard  *instanceguard.Guard
 }
 
-func New(environment Environment) (*Client, error) {
+// Open is the only production constructor. One owner covers both environments,
+// independent of working directory, checkout, or Windows terminal session.
+func Open(environment Environment) (*Client, error) {
+	return open(environment, `Global\JapanStockAutotrader.KabuApi.v1`)
+}
+
+func open(environment Environment, name string) (*Client, error) {
+	client, err := newClient(environment)
+	if err != nil {
+		return nil, err
+	}
+	guard, err := instanceguard.Acquire(name)
+	if err != nil {
+		client.Close()
+		return nil, err
+	}
+	client.guard = guard
+	return client, nil
+}
+
+// newClient is also used by package-local mock HTTP tests without a real gate.
+func newClient(environment Environment) (*Client, error) {
 	port := "18081"
 	switch environment {
 	case Test:
@@ -95,7 +120,11 @@ func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.token = ""
+	c.closed = true
 	c.http.CloseIdleConnections()
+	if c.guard != nil {
+		c.guard.Close()
+	}
 }
 
 func (c *Client) Board(ctx context.Context, symbol string) (json.RawMessage, error) {
@@ -165,6 +194,12 @@ func allowed(method, path string) bool {
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body []byte) (json.RawMessage, error) {
+	if c.closed {
+		return nil, errors.New("API接続は終了しています")
+	}
+	if ctx.Err() != nil {
+		return nil, errors.New("取得を中断しました")
+	}
 	if !allowed(method, path) {
 		return nil, errors.New("読み取り専用APIの許可範囲外です")
 	}

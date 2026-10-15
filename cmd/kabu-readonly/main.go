@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/collector"
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/collectquotes"
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 )
 
@@ -25,7 +25,19 @@ func main() {
 	}
 }
 
+type session interface {
+	collectquotes.Reader
+	Authenticate(context.Context, string) error
+	Close()
+}
+
 func run(ctx context.Context, args []string, input io.Reader, output io.Writer) error {
+	return runWithSession(ctx, args, input, output, func(env kabu.Environment) (session, error) {
+		return kabu.Open(env)
+	})
+}
+
+func runWithSession(ctx context.Context, args []string, input io.Reader, output io.Writer, openSession func(kabu.Environment) (session, error)) error {
 	fs := flag.NewFlagSet("kabu-readonly", flag.ContinueOnError)
 	fs.SetOutput(output)
 	env := fs.String("environment", "test", "test (18081) または production (18080)")
@@ -45,11 +57,6 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
 		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
 	}
-	client, err := kabu.New(kabu.Environment(*env))
-	if err != nil {
-		return err
-	}
-	defer client.Close()
 	var symbols []string
 	seen := map[string]bool{}
 	for _, item := range strings.Split(*symbolList, ",") {
@@ -68,6 +75,11 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 	if !*passwordStdin {
 		return errors.New("scripts/collect.ps1 を利用するか -password-stdin を指定してください")
 	}
+	client, err := openSession(kabu.Environment(*env))
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 	reader := bufio.NewReader(io.LimitReader(input, 1025))
 	password, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
@@ -81,38 +93,8 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 		return err
 	}
 	password = ""
-	return repeat(ctx, *count, *interval, func() error {
-		snapshot, collectErr := collector.Collect(ctx, client, kabu.Environment(*env), symbols)
-		// Keep all account data in the ignored local data/ tree.
-		path, saveErr := collector.Save("data/"+*env, snapshot)
-		if saveErr != nil {
-			return saveErr
-		}
-		fmt.Fprintf(output, "保存: %s / complete=%t / records=%d\n", path, snapshot.Complete, len(snapshot.Records))
-		return collectErr
-	})
-}
-
-// Wait after each successful save: slow requests never cause catch-up bursts.
-// Authentication is performed once by the caller; any failure ends the run.
-func repeat(ctx context.Context, count int, interval time.Duration, collect func() error) error {
-	for i := 0; i < count; i++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := collect(); err != nil {
-			return err
-		}
-		if i+1 == count {
-			break
-		}
-		timer := time.NewTimer(interval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-	}
-	return nil
+	return collectquotes.Run(ctx, client, collectquotes.Options{
+		Environment: kabu.Environment(*env), Symbols: symbols,
+		Count: *count, Interval: *interval, Directory: "data/" + *env,
+	}, output)
 }

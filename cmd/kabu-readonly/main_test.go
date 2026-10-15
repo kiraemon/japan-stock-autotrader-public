@@ -6,7 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 )
 
 func TestInvalidArgumentsFailBeforeAuthentication(t *testing.T) {
@@ -31,68 +33,18 @@ func TestInvalidArgumentsFailBeforeAuthentication(t *testing.T) {
 	}
 }
 
-func TestRepeatCountAndSpacing(t *testing.T) {
-	const interval = 5 * time.Millisecond
-	var finished time.Time
-	calls := 0
-	err := repeat(context.Background(), 3, interval, func() error {
-		if !finished.IsZero() && time.Since(finished) < interval {
-			t.Fatal("next collection started before the post-save interval")
-		}
-		calls++
-		finished = time.Now()
-		return nil
-	})
-	if err != nil || calls != 3 {
-		t.Fatalf("calls=%d err=%v", calls, err)
-	}
+type unreadableInput struct{ t *testing.T }
+
+func (r unreadableInput) Read([]byte) (int, error) {
+	r.t.Fatal("password was read before acquiring the session")
+	return 0, nil
 }
 
-func TestRepeatStopsOnFailure(t *testing.T) {
-	failure := errors.New("collection or save failed")
-	calls := 0
-	err := repeat(context.Background(), 10, time.Millisecond, func() error {
-		calls++
-		return failure
-	})
-	if !errors.Is(err, failure) || calls != 1 {
-		t.Fatalf("calls=%d err=%v", calls, err)
-	}
-}
-
-func TestRepeatCancellationDuringWait(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	started := make(chan struct{})
-	done := make(chan error, 1)
-	calls := 0
-	go func() {
-		done <- repeat(ctx, 3, time.Hour, func() error {
-			calls++
-			close(started)
-			return nil
-		})
-	}()
-	<-started
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) || calls != 1 {
-			t.Fatalf("calls=%d err=%v", calls, err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancellation did not interrupt the wait")
-	}
-}
-
-func TestRepeatAlreadyCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	err := repeat(ctx, 1, time.Second, func() error {
-		t.Fatal("collection started after cancellation")
-		return nil
-	})
-	if !errors.Is(err, context.Canceled) {
+func TestSecondInstanceRejectedBeforePasswordRead(t *testing.T) {
+	var output bytes.Buffer
+	err := runWithSession(context.Background(), []string{"-symbols", "7203@1", "-password-stdin"}, unreadableInput{t}, &output,
+		func(kabu.Environment) (session, error) { return nil, instanceguard.ErrHeld })
+	if !errors.Is(err, instanceguard.ErrHeld) {
 		t.Fatal(err)
 	}
 }

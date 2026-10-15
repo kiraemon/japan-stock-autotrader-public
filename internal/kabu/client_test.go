@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -14,13 +15,44 @@ func fixture(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client, err := New(Test)
+	client, err := newClient(Test)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client.base = server.URL + "/kabusapi"
 	t.Cleanup(client.Close)
 	return client
+}
+
+func TestConcurrentReadsShareOneSendBudget(t *testing.T) {
+	var mu sync.Mutex
+	var starts []time.Time
+	client := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		fmt.Fprint(w, `{}`)
+	})
+	client.token = "test-only-token"
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Go(func() {
+			if _, err := client.Cash(context.Background()); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != 4 {
+		t.Fatalf("requests=%d", len(starts))
+	}
+	for i := 1; i < len(starts); i++ {
+		if starts[i].Sub(starts[i-1]) < 225*time.Millisecond {
+			t.Fatal("concurrent requests bypassed budget")
+		}
+	}
 }
 
 func TestReadOnlyBoundary(t *testing.T) {
@@ -131,7 +163,7 @@ func TestRejectRedirect(t *testing.T) {
 }
 
 func TestCancellationAndEnvironment(t *testing.T) {
-	if _, err := New("https://example.com"); err == nil {
+	if _, err := newClient("https://example.com"); err == nil {
 		t.Fatal("external address accepted")
 	}
 	client := fixture(t, func(http.ResponseWriter, *http.Request) { t.Error("canceled request reached server") })
