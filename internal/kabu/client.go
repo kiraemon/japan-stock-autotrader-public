@@ -198,7 +198,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 		return nil, errors.New("API接続は終了しています")
 	}
 	if ctx.Err() != nil {
-		return nil, errors.New("取得を中断しました")
+		return nil, fmt.Errorf("取得を中断しました: %w", ctx.Err())
 	}
 	if !allowed(method, path) {
 		return nil, errors.New("読み取り専用APIの許可範囲外です")
@@ -208,7 +208,7 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 		defer timer.Stop()
 		select {
 		case <-ctx.Done():
-			return nil, errors.New("取得を中断しました")
+			return nil, fmt.Errorf("取得を中断しました: %w", ctx.Err())
 		case <-timer.C:
 		}
 	}
@@ -224,6 +224,9 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 	resp, err := c.http.Do(req)
 	if err != nil {
 		// Transport errors may contain URLs or server-controlled text; never echo them.
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return nil, fmt.Errorf("取得を中断しました: %w", ctx.Err())
+		}
 		return nil, errors.New("API通信に失敗しました。起動・ログイン・API設定・接続先を確認してください")
 	}
 	defer resp.Body.Close()
@@ -235,6 +238,9 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 	}
 	const limit = 8 << 20
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return nil, fmt.Errorf("取得を中断しました: %w", ctx.Err())
+	}
 	if err != nil || len(raw) > limit || !json.Valid(raw) {
 		return nil, errors.New("API応答を正常に読み取れません")
 	}

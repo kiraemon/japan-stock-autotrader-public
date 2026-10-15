@@ -48,6 +48,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	onePassword := fs.Bool("onepassword", false, "暗号化済みサービスアカウント設定からAPIパスワードを取得")
 	count := fs.Int("count", 1, "取得回数（1〜10000）")
 	interval := fs.Duration("interval", 10*time.Second, "保存完了から次の取得までの待機時間（1s〜1h）")
+	untilText := fs.String("until", "", "終了日時: RFC3339（例 2026-10-16T15:35:00+09:00）。countと早い方で終了")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -59,6 +60,23 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	}
 	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
 		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
+	}
+	var until time.Time
+	if *untilText != "" {
+		var err error
+		until, err = time.Parse(time.RFC3339, *untilText)
+		if err != nil || !until.After(time.Now()) || time.Until(until) > 24*time.Hour {
+			return errors.New("untilは24時間以内の未来の日時をタイムゾーン付きRFC3339で指定してください")
+		}
+		countSpecified := false
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "count" {
+				countSpecified = true
+			}
+		})
+		if !countSpecified {
+			*count = 10000
+		}
 	}
 	var symbols []string
 	seen := map[string]bool{}
@@ -89,6 +107,10 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	}
 	defer func() {
 		state := "completed"
+		if errors.Is(runErr, collectquotes.ErrScheduledEnd) {
+			state = "scheduled_end"
+			runErr = nil
+		}
 		if monitor.Err() != nil {
 			runErr = monitor.Err()
 			state = "failed"
@@ -124,6 +146,9 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if err := workCtx.Err(); err != nil {
 		return err
 	}
+	if !until.IsZero() && !until.After(time.Now()) {
+		return errors.New("終了日時を過ぎたため認証を開始しません")
+	}
 	if err := monitor.Phase("authenticating"); err != nil {
 		return err
 	}
@@ -131,9 +156,18 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		return err
 	}
 	password = ""
+	if !until.IsZero() && !until.After(time.Now()) {
+		return errors.New("終了日時を過ぎたため収集を開始しません")
+	}
+	if !until.IsZero() {
+		if _, err := fmt.Fprintf(output, "収集終了日時: %s / 最大%d回 / 保存後待機=%s\n", until.In(time.FixedZone("JST", 9*60*60)).Format(time.RFC3339), *count, *interval); err != nil {
+			return errors.New("開始結果を出力できません")
+		}
+	}
 	return collectquotes.Run(workCtx, client, collectquotes.Options{
 		Environment: kabu.Environment(*env), Symbols: symbols,
 		Count: *count, Interval: *interval, Directory: "data/" + *env,
+		Until: until,
 		Observe: func(p collectquotes.Progress) error {
 			if p.Phase == "saved" {
 				return monitor.Saved(p.Complete)

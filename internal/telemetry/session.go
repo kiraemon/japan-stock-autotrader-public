@@ -277,4 +277,6 @@ func validPhase(s string) bool {
 	}
 	return false
 }
-func terminal(s string) bool { return s == "completed" || s == "interrupted" || s == "failed" }
+func terminal(s string) bool {
+	return s == "completed" || s == "scheduled_end" || s == "interrupted" || s == "failed"
+}

@@ -30,10 +30,10 @@
   function render(view) {
     const runtime=view.runtime||{}, active=runtime.state==="active";
     const phaseNames={starting:"起動中",credentials:"認証情報の準備中",authenticating:"認証中",collecting:"取得中",waiting:"次回取得の待機中"};
-    const stateNames={completed:"収集完了",interrupted:"中断",failed:"エラーで停止",stale:"稼働未確認",unrecorded:"記録なし",unavailable:"状態を読み取れません",clock_error:"時刻を確認"};
+    const stateNames={completed:"収集完了",scheduled_end:"終了時刻に到達",interrupted:"中断",failed:"エラーで停止",stale:"稼働未確認",unrecorded:"記録なし",unavailable:"状態を読み取れません",clock_error:"時刻を確認"};
     $("runtime-state").textContent=active ? phaseNames[runtime.phase]||"状態不明" : stateNames[runtime.state]||"記録なし";
     $("runtime-indicator").className="runtime-indicator"+(active?" active":["failed","stale","unavailable","clock_error"].includes(runtime.state)?" warning":"");
-    $("runtime-progress").textContent=runtime.planned ? "今回の保存 "+number(runtime.saved)+" / "+number(runtime.planned)+" 件" : "この保存先の収集記録";
+    $("runtime-progress").textContent=runtime.planned ? "今回の保存 "+number(runtime.saved)+" 件 / 上限 "+number(runtime.planned)+" 件" : "この保存先の収集記録";
     $("runtime-updated").textContent=runtime.updated_at ? "状態更新 "+jst(runtime.updated_at,true)+" "+jst(runtime.updated_at)+" JST" : "更新版の収集プログラムを起動すると表示されます";
     $("latest-time").replaceChildren(document.createTextNode(jst(view.latest_at)),el("small","JST"));
     $("latest-date").textContent = view.latest_at ? jst(view.latest_at,true)+" / 取得完了" : "まだ取得データがありません";

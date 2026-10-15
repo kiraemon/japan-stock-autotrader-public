@@ -2,6 +2,7 @@ package kabu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -178,5 +179,33 @@ func TestCancellationAndEnvironment(t *testing.T) {
 		if ValidateSymbol(symbol) == nil {
 			t.Errorf("bad symbol accepted: %s", symbol)
 		}
+	}
+}
+
+func TestCallerDeadlinePreservedWithoutTransportDetails(t *testing.T) {
+	for _, phase := range []string{"rate wait", "headers", "body", "client timeout"} {
+		t.Run(phase, func(t *testing.T) {
+			client := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if phase == "body" {
+					fmt.Fprint(w, `{"incomplete":`)
+					w.(http.Flusher).Flush()
+				}
+				<-r.Context().Done()
+			})
+			client.token = "synthetic-only"
+			ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+			defer cancel()
+			if phase == "rate wait" {
+				client.next = time.Now().Add(time.Hour)
+			}
+			if phase == "client timeout" {
+				ctx = context.Background()
+				client.http.Timeout = 20 * time.Millisecond
+			}
+			_, err := client.Cash(ctx)
+			if err == nil || errors.Is(err, context.DeadlineExceeded) == (phase == "client timeout") || strings.Contains(err.Error(), "http://") || strings.Contains(err.Error(), "synthetic-only") {
+				t.Fatalf("incorrect deadline or unsafe error: %v", err)
+			}
+		})
 	}
 }

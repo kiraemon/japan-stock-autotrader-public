@@ -66,6 +66,7 @@ func TestSecondInstanceRejectedBeforeOnePasswordConfiguration(t *testing.T) {
 type observedSession struct {
 	failAuth bool
 	failRead bool
+	waitRead bool
 	closed   bool
 }
 
@@ -76,7 +77,11 @@ func (s *observedSession) Authenticate(context.Context, string) error {
 	return nil
 }
 func (s *observedSession) Close() { s.closed = true }
-func (s *observedSession) Cash(context.Context) (json.RawMessage, error) {
+func (s *observedSession) Cash(ctx context.Context) (json.RawMessage, error) {
+	if s.waitRead {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if s.failRead {
 		return nil, errors.New("synthetic read failure")
 	}
@@ -154,4 +159,60 @@ func TestEmptyClosedInputIsInterruptedStart(t *testing.T) {
 	if !errors.Is(err, errInputClosed) || !client.closed || telemetry.Observe("data", "test", time.Now()).State != "interrupted" {
 		t.Fatal("closed console input not classified as interrupted")
 	}
+}
+
+func TestInvalidEndRejectedBeforeSessionOrPassword(t *testing.T) {
+	for _, value := range []string{"15:35", "2026-10-16T15:35:00", time.Now().Add(-time.Hour).Format(time.RFC3339), time.Now().Add(25 * time.Hour).Format(time.RFC3339)} {
+		err := runWithSession(context.Background(), []string{"-symbols", "7203@1", "-password-stdin", "-until", value}, unreadableInput{t}, &bytes.Buffer{}, func(kabu.Environment) (session, error) {
+			t.Fatal("session opened with invalid end time")
+			return nil, nil
+		})
+		if err == nil {
+			t.Fatal("invalid end accepted")
+		}
+	}
+}
+
+func TestScheduledCLILifecycleAndCountLimit(t *testing.T) {
+	for _, explicitCount := range []bool{false, true} {
+		t.Run(map[bool]string{false: "until", true: "count first"}[explicitCount], func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			client := &observedSession{}
+			until := time.Now().Add(2 * time.Second)
+			args := []string{"-symbols", "7203@1", "-password-stdin", "-until", until.Format(time.RFC3339Nano), "-interval", "1h"}
+			planned := 10000
+			if explicitCount {
+				args = append(args, "-count", "1")
+				planned = 1
+			}
+			var output bytes.Buffer
+			err := runWithSession(context.Background(), args, strings.NewReader("synthetic-only\n"), &output, func(kabu.Environment) (session, error) { return client, nil })
+			status := telemetry.Observe("data", "test", time.Now())
+			wantState := "scheduled_end"
+			if explicitCount {
+				wantState = "completed"
+			}
+			if err != nil || !client.closed || status.State != wantState || status.Saved != 1 || status.Planned != planned {
+				t.Fatalf("state=%s saved=%d planned=%d err=%v", status.State, status.Saved, status.Planned, err)
+			}
+			if strings.Contains(output.String(), "終了日時に到達") == explicitCount {
+				t.Fatal("stop reason incorrect")
+			}
+			t.Log(output.String())
+			t.Logf("state=%s / saved=%d / maximum=%d / session_closed=%t", status.State, status.Saved, status.Planned, client.closed)
+		})
+	}
+}
+
+func TestScheduledReadSavesPartialAndClosesSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	client := &observedSession{waitRead: true}
+	var output bytes.Buffer
+	err := runWithSession(context.Background(), []string{"-symbols", "7203@1", "-password-stdin", "-until", time.Now().Add(time.Second).Format(time.RFC3339Nano)}, strings.NewReader("synthetic-only\n"), &output, func(kabu.Environment) (session, error) { return client, nil })
+	status := telemetry.Observe("data", "test", time.Now())
+	if err != nil || !client.closed || status.State != "scheduled_end" || status.Saved != 1 || !strings.Contains(output.String(), "complete=false / records=1") {
+		t.Fatalf("partial stop failed: state=%s saved=%d err=%v", status.State, status.Saved, err)
+	}
+	t.Log(output.String())
+	t.Logf("state=%s / saved=%d / session_closed=%t", status.State, status.Saved, client.closed)
 }
