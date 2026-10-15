@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/collectquotes"
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 )
@@ -43,6 +44,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	env := fs.String("environment", "test", "test (18081) または production (18080)")
 	symbolList := fs.String("symbols", "", "必須: 7203@1,130A@1 の形式（最大50銘柄）")
 	passwordStdin := fs.Bool("password-stdin", false, "APIパスワードを標準入力から1行読み取る")
+	onePassword := fs.Bool("onepassword", false, "暗号化済みサービスアカウント設定からAPIパスワードを取得")
 	count := fs.Int("count", 1, "取得回数（1〜10000）")
 	interval := fs.Duration("interval", 10*time.Second, "保存完了から次の取得までの待機時間（1s〜1h）")
 	if err := fs.Parse(args); err != nil {
@@ -72,20 +74,28 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if len(symbols) > 50 {
 		return errors.New("銘柄数は最大50です。既存のAPI登録銘柄も確認してください")
 	}
-	if !*passwordStdin {
-		return errors.New("scripts/collect.ps1 を利用するか -password-stdin を指定してください")
+	if *passwordStdin == *onePassword {
+		return errors.New("-password-stdin または -onepassword のどちらか1つを指定してください")
 	}
 	client, err := openSession(kabu.Environment(*env))
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	reader := bufio.NewReader(io.LimitReader(input, 1025))
-	password, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return errors.New("APIパスワードを読み取れません")
+	var password string
+	if *onePassword {
+		password, err = credentials.OnePassword(ctx, ".", *env)
+		if err != nil {
+			return err
+		}
+	} else {
+		reader := bufio.NewReader(io.LimitReader(input, 1025))
+		password, err = reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return errors.New("APIパスワードを読み取れません")
+		}
+		password = strings.TrimSuffix(strings.TrimSuffix(password, "\n"), "\r")
 	}
-	password = strings.TrimSuffix(strings.TrimSuffix(password, "\n"), "\r")
 	if len(password) == 0 || len(password) > 1024 {
 		return errors.New("APIパスワードの長さが不正です")
 	}
