@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/collector"
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
@@ -30,6 +31,8 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 	env := fs.String("environment", "test", "test (18081) または production (18080)")
 	symbolList := fs.String("symbols", "", "必須: 7203@1,130A@1 の形式（最大50銘柄）")
 	passwordStdin := fs.Bool("password-stdin", false, "APIパスワードを標準入力から1行読み取る")
+	count := fs.Int("count", 1, "取得回数（1〜10000）")
+	interval := fs.Duration("interval", 10*time.Second, "保存完了から次の取得までの待機時間（1s〜1h）")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -38,6 +41,9 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 	}
 	if fs.NArg() != 0 {
 		return errors.New("不要な引数があります。パスワードは引数に指定しないでください")
+	}
+	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
+		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
 	}
 	client, err := kabu.New(kabu.Environment(*env))
 	if err != nil {
@@ -75,12 +81,38 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 		return err
 	}
 	password = ""
-	snapshot, collectErr := collector.Collect(ctx, client, kabu.Environment(*env), symbols)
-	// Keep all account data in the ignored local data/ tree.
-	path, saveErr := collector.Save("data/"+*env, snapshot)
-	if saveErr != nil {
-		return saveErr
+	return repeat(ctx, *count, *interval, func() error {
+		snapshot, collectErr := collector.Collect(ctx, client, kabu.Environment(*env), symbols)
+		// Keep all account data in the ignored local data/ tree.
+		path, saveErr := collector.Save("data/"+*env, snapshot)
+		if saveErr != nil {
+			return saveErr
+		}
+		fmt.Fprintf(output, "保存: %s / complete=%t / records=%d\n", path, snapshot.Complete, len(snapshot.Records))
+		return collectErr
+	})
+}
+
+// Wait after each successful save: slow requests never cause catch-up bursts.
+// Authentication is performed once by the caller; any failure ends the run.
+func repeat(ctx context.Context, count int, interval time.Duration, collect func() error) error {
+	for i := 0; i < count; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := collect(); err != nil {
+			return err
+		}
+		if i+1 == count {
+			break
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	fmt.Fprintf(output, "保存: %s / complete=%t / records=%d\n", path, snapshot.Complete, len(snapshot.Records))
-	return collectErr
+	return nil
 }
