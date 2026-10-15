@@ -17,6 +17,7 @@ import (
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/dashboard"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/inspectquality"
+	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
 )
 
 func main() {
@@ -62,11 +63,19 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return view, nil
 	}
 	address := "127.0.0.1:" + strconv.Itoa(*port)
+	readRuntime := func(environment string) dashboard.Runtime {
+		if *demo {
+			now := time.Now().UTC()
+			return dashboard.Runtime{State: "active", Phase: "waiting", UpdatedAt: &now, StartedAt: &now, Saved: 12, Planned: 60}
+		}
+		status := telemetry.Observe(*dataRoot, environment, time.Now().UTC())
+		return dashboard.Runtime{State: status.State, Phase: status.Phase, UpdatedAt: status.UpdatedAt, StartedAt: status.StartedAt, Saved: status.Saved, Planned: status.Planned}
+	}
 	listener, err := net.Listen("tcp4", address)
 	if err != nil {
 		return errors.New("表示ポートを開けません。別の-portを指定してください")
 	}
-	server := &http.Server{Handler: dashboard.Handler(*port, load), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
+	server := &http.Server{Handler: dashboard.Handler(*port, load, readRuntime), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	if _, err := fmt.Fprintf(out, "Dashboard: http://%s/\nRead-only local view. Broker API requests: none.\nStop: Ctrl+C\n", address); err != nil {
 		listener.Close()
 		return errors.New("起動情報を出力できません")

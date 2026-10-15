@@ -23,7 +23,7 @@ type cached struct {
 }
 
 // Handler binds rendering to a restricted projection. No file server or raw data route exists.
-func Handler(port int, load Loader) http.Handler {
+func Handler(port int, load Loader, readRuntime func(string) Runtime) http.Handler {
 	tmpl := template.Must(template.New("index.html").Funcs(template.FuncMap{
 		"clock": func(t time.Time) string { return t.In(time.FixedZone("JST", 9*3600)).Format("15:04:05") },
 	}).ParseFS(web, "web/index.html"))
@@ -89,16 +89,21 @@ func Handler(port int, load Loader) http.Handler {
 			cache[environment] = item
 		}
 		mu.Unlock()
+		view := item.view
+		// Heartbeat age must be assessed now, outside the slower snapshot cache.
+		if readRuntime != nil {
+			view.Runtime = readRuntime(environment)
+		}
 		var body bytes.Buffer
 		if r.URL.Path == "/api/status" {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			if json.NewEncoder(&body).Encode(item.view) != nil {
+			if json.NewEncoder(&body).Encode(view) != nil {
 				http.Error(w, "表示結果を生成できません", 500)
 				return
 			}
 		} else {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if tmpl.ExecuteTemplate(&body, "index.html", item.view) != nil {
+			if tmpl.ExecuteTemplate(&body, "index.html", view) != nil {
 				http.Error(w, "画面を生成できません", 500)
 				return
 			}

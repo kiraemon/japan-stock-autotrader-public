@@ -42,6 +42,15 @@ type Recent struct {
 	Records    int       `json:"records"`
 }
 
+type Runtime struct {
+	State     string     `json:"state"`
+	Phase     string     `json:"phase"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	StartedAt *time.Time `json:"started_at"`
+	Saved     int        `json:"saved"`
+	Planned   int        `json:"planned"`
+}
+
 // View is the complete browser contract. Account fields and source errors are absent.
 type View struct {
 	Environment     string     `json:"environment"`
@@ -56,6 +65,7 @@ type View struct {
 	Quotes          []Quote    `json:"quotes"`
 	Recent          []Recent   `json:"recent"`
 	Quality         Quality    `json:"quality"`
+	Runtime         Runtime    `json:"runtime"`
 }
 
 type snapshot struct {

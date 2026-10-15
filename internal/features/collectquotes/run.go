@@ -16,6 +16,13 @@ type Options struct {
 	Count       int
 	Interval    time.Duration
 	Directory   string
+	Observe     func(Progress) error
+}
+
+// Progress contains metadata only. The caller connects it to shared observation.
+type Progress struct {
+	Phase    string
+	Complete bool
 }
 
 // Run collects and saves serially, stopping on any collection or save failure.
@@ -35,16 +42,36 @@ func Run(ctx context.Context, client Reader, options Options, output io.Writer) 
 			return err
 		}
 	}
+	iteration := 0
+	notify := func(phase string, complete bool) error {
+		if options.Observe != nil {
+			return options.Observe(Progress{phase, complete})
+		}
+		return nil
+	}
 	return repeat(ctx, options.Count, options.Interval, func() error {
+		iteration++
+		if err := notify("collecting", false); err != nil {
+			return err
+		}
 		snapshot, collectErr := Collect(ctx, client, options.Environment, options.Symbols)
 		path, err := Save(options.Directory, snapshot)
 		if err != nil {
 			return err
 		}
+		if err := notify("saved", snapshot.Complete); err != nil {
+			return err
+		}
 		if _, err := fmt.Fprintf(output, "保存: %s / complete=%t / records=%d\n", path, snapshot.Complete, len(snapshot.Records)); err != nil {
 			return errors.New("保存結果を出力できません")
 		}
-		return collectErr
+		if collectErr != nil {
+			return collectErr
+		}
+		if iteration < options.Count {
+			return notify("waiting", false)
+		}
+		return nil
 	})
 }
 

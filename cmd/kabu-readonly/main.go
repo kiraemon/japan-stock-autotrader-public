@@ -15,6 +15,7 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/collectquotes"
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
 )
 
 func main() {
@@ -38,7 +39,7 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 	})
 }
 
-func runWithSession(ctx context.Context, args []string, input io.Reader, output io.Writer, openSession func(kabu.Environment) (session, error)) error {
+func runWithSession(ctx context.Context, args []string, input io.Reader, output io.Writer, openSession func(kabu.Environment) (session, error)) (runErr error) {
 	fs := flag.NewFlagSet("kabu-readonly", flag.ContinueOnError)
 	fs.SetOutput(output)
 	env := fs.String("environment", "test", "test (18081) または production (18080)")
@@ -82,29 +83,98 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		return err
 	}
 	defer client.Close()
+	monitor, err := telemetry.Start(ctx, "data", *env, *count)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		state := "completed"
+		if monitor.Err() != nil {
+			runErr = monitor.Err()
+			state = "failed"
+		} else if runErr != nil {
+			state = "failed"
+			if ctx.Err() != nil || errors.Is(runErr, errInputClosed) {
+				state = "interrupted"
+			}
+		}
+		if err := monitor.Finish(state); err != nil {
+			runErr = err
+		}
+	}()
+	workCtx := monitor.Context()
+	if err := monitor.Phase("credentials"); err != nil {
+		return err
+	}
 	var password string
 	if *onePassword {
-		password, err = credentials.OnePassword(ctx, ".", *env)
+		password, err = credentials.OnePassword(workCtx, ".", *env)
 		if err != nil {
 			return err
 		}
 	} else {
-		reader := bufio.NewReader(io.LimitReader(input, 1025))
-		password, err = reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			return errors.New("APIパスワードを読み取れません")
+		password, err = readPassword(workCtx, input)
+		if err != nil {
+			return err
 		}
-		password = strings.TrimSuffix(strings.TrimSuffix(password, "\n"), "\r")
 	}
 	if len(password) == 0 || len(password) > 1024 {
 		return errors.New("APIパスワードの長さが不正です")
 	}
-	if err := client.Authenticate(ctx, password); err != nil {
+	if err := workCtx.Err(); err != nil {
+		return err
+	}
+	if err := monitor.Phase("authenticating"); err != nil {
+		return err
+	}
+	if err := client.Authenticate(workCtx, password); err != nil {
 		return err
 	}
 	password = ""
-	return collectquotes.Run(ctx, client, collectquotes.Options{
+	return collectquotes.Run(workCtx, client, collectquotes.Options{
 		Environment: kabu.Environment(*env), Symbols: symbols,
 		Count: *count, Interval: *interval, Directory: "data/" + *env,
+		Observe: func(p collectquotes.Progress) error {
+			if p.Phase == "saved" {
+				return monitor.Saved(p.Complete)
+			}
+			return monitor.Phase(p.Phase)
+		},
 	}, output)
+}
+
+// Input can block while the user is away. Cancellation must still release the
+// startup guard and finish status; a blocked input goroutine ends with the process.
+var errInputClosed = errors.New("APIパスワードの入力を中断しました")
+
+func readPassword(ctx context.Context, input io.Reader) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	type result struct {
+		password string
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		reader := bufio.NewReader(io.LimitReader(input, 1025))
+		password, err := reader.ReadString('\n')
+		// Windows console Ctrl+C can finish ReadConsole as empty EOF before the
+		// signal notification goroutine runs. Closed input is an aborted start.
+		if err == io.EOF && password == "" {
+			resultCh <- result{"", errInputClosed}
+			return
+		}
+		if err != nil && err != io.EOF {
+			resultCh <- result{"", errors.New("APIパスワードを読み取れません")}
+			return
+		}
+		resultCh <- result{strings.TrimSuffix(strings.TrimSuffix(password, "\n"), "\r"), nil}
+	}()
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case value := <-resultCh:
+		return value.password, value.err
+	}
 }

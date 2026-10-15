@@ -206,3 +206,13 @@ footer{font-size:10px}
 .panel-note,.observation-note{font-size:11px}
 .intro{font-size:11px}
 }
+.runtime-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 19px;margin-bottom:20px;border:1px solid var(--edge);border-radius:8px;background:#10171d}
+.runtime-heading{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px}
+.runtime-heading strong{color:var(--text);font-size:12px;font-weight:500;margin-left:7px}
+.runtime-indicator{display:inline-block;width:6px;height:6px;border-radius:50%;background:#7f919f}
+.runtime-indicator.active{background:var(--green);box-shadow:0 0 0 4px #8be0c210}
+.runtime-indicator.warning{background:var(--amber)}
+.runtime-meta{display:flex;align-items:center;gap:21px;color:#8fa1ae;font-size:10px}
+#runtime-progress{font-family:var(--mono)}
+@media(max-width:1200px){.runtime-bar{align-items:flex-start;flex-direction:column;gap:9px}.runtime-meta{justify-content:space-between;width:100%}}
+@media(max-width:660px){.runtime-heading{flex-wrap:wrap}.runtime-meta{flex-direction:column;align-items:flex-start;gap:4px}.runtime-bar{padding:14px}}

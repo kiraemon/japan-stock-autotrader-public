@@ -101,7 +101,7 @@ func TestHandlerBoundariesAndCache(t *testing.T) {
 	handler := Handler(18700, func(_ context.Context, env string) (View, error) {
 		calls[env]++
 		return Demo(env, time.Now().UTC()), nil
-	})
+	}, nil)
 	tests := []struct {
 		method, path, host, origin, site string
 		status                           int
@@ -142,10 +142,33 @@ func TestHandlerBoundariesAndCache(t *testing.T) {
 }
 
 func TestFailedLoadDoesNotExposeErrorOrOldView(t *testing.T) {
-	h := Handler(18700, func(context.Context, string) (View, error) { return View{}, os.ErrPermission })
+	h := Handler(18700, func(context.Context, string) (View, error) { return View{}, os.ErrPermission }, nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://127.0.0.1:18700/api/status", nil))
 	if w.Code != 503 || strings.Contains(w.Body.String(), os.ErrPermission.Error()) {
 		t.Fatal("load failure not safely reported")
+	}
+}
+
+func TestHeartbeatBypassesSnapshotCache(t *testing.T) {
+	loads, checks := 0, 0
+	h := Handler(18700, func(context.Context, string) (View, error) { loads++; return Demo("test", time.Now()), nil }, func(string) Runtime {
+		checks++
+		state := "active"
+		if checks > 1 {
+			state = "stale"
+		}
+		return Runtime{State: state, Phase: "waiting"}
+	})
+	for _, expected := range []string{"active", "stale"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "http://127.0.0.1:18700/api/status?environment=test", nil))
+		var v View
+		if json.Unmarshal(w.Body.Bytes(), &v) != nil || v.Runtime.State != expected {
+			t.Fatal("heartbeat classification was cached")
+		}
+	}
+	if loads != 1 || checks != 2 {
+		t.Fatal("cache boundaries changed")
 	}
 }

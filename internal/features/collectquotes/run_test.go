@@ -145,3 +145,20 @@ func TestRepeatAlreadyCanceled(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestObserverFailureStopsBeforeBrokerRead(t *testing.T) {
+	reader := &fakeReader{}
+	err := Run(context.Background(), reader, Options{Environment: "test", Symbols: []string{"7203@1"}, Count: 1, Interval: time.Second, Directory: t.TempDir(), Observe: func(Progress) error { return errors.New("status unavailable") }}, &bytes.Buffer{})
+	if err == nil || reader.calls != 0 {
+		t.Fatal("broker used after status failure")
+	}
+}
+
+func TestObserverRecordsPartialSavedBeforeFailure(t *testing.T) {
+	reader := &fakeReader{failAt: 3}
+	var events []Progress
+	err := Run(context.Background(), reader, Options{Environment: "test", Symbols: []string{"7203@1"}, Count: 2, Interval: time.Second, Directory: t.TempDir(), Observe: func(p Progress) error { events = append(events, p); return nil }}, &bytes.Buffer{})
+	if err == nil || len(events) != 2 || events[0].Phase != "collecting" || events[1].Phase != "saved" || events[1].Complete {
+		t.Fatal("partial observation incorrect")
+	}
+}

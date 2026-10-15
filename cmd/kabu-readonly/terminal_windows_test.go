@@ -8,8 +8,10 @@ import (
 	"os/signal"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
 )
 
 // TestTerminalHelper is opt-in: run the compiled test binary in a real terminal
@@ -23,7 +25,11 @@ func TestTerminalHelper(t *testing.T) {
 	if mode != "reading" && mode != "waiting" {
 		t.Fatal("unknown terminal case")
 	}
-	t.Chdir(t.TempDir())
+	if root := os.Getenv("JSA_TERMINAL_ROOT"); root != "" {
+		t.Chdir(root)
+	} else {
+		t.Chdir(t.TempDir())
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	err := runWithSession(ctx,
@@ -39,6 +45,11 @@ func TestTerminalHelper(t *testing.T) {
 	if ctx.Err() == nil || err == nil {
 		t.Fatalf("expected interrupt cancellation, got %v", err)
 	}
+	observed := telemetry.Observe("data", "test", time.Now().UTC())
+	if observed.State != "interrupted" || observed.Saved != 1 {
+		t.Fatalf("interrupted status not saved: %s / %d", observed.State, observed.Saved)
+	}
+	fmt.Println("TEST_STATUS=interrupted / saved=1")
 	fmt.Println("TEST_RESULT=interrupted-and-session-closed")
 }
 
