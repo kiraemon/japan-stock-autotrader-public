@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/inspecthistory"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/inspectquality"
 )
 
@@ -26,6 +27,7 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	fs := flag.NewFlagSet("kabu-inspect", flag.ContinueOnError)
 	fs.SetOutput(output)
 	environment := fs.String("environment", "production", "保存データの環境: production または test（API通信なし）")
+	history := fs.Bool("history", false, "歩み値の順序と日次OHLC・出来高を保存済み板と照合（API通信なし）")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -34,6 +36,9 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	}
 	if fs.NArg() != 0 || (*environment != "production" && *environment != "test") {
 		return errors.New("-environment production または testを指定してください")
+	}
+	if *history {
+		return inspectHistory(ctx, *environment, output)
 	}
 	report, err := inspectquality.Inspect(ctx, "data/"+*environment, *environment)
 	if err != nil {
@@ -61,6 +66,34 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	fmt.Fprintf(&summary, "判定: %s（保存データの品質のみ。休場判定・鮮度の合否判定は未実施）\n保存: %s\n", status, path)
 	if _, err := io.WriteString(output, summary.String()); err != nil {
 		return errors.New("品質結果を出力できません")
+	}
+	return nil
+}
+
+func inspectHistory(ctx context.Context, environment string, output io.Writer) error {
+	report, err := inspecthistory.Inspect(ctx, "data/history/"+environment, "data/"+environment, environment)
+	if err != nil {
+		return err
+	}
+	path, err := inspecthistory.Save("data/quality", report)
+	if err != nil {
+		return err
+	}
+	var summary strings.Builder
+	fmt.Fprintf(&summary, "履歴確認: environment=%s / archives=%d / invalid_snapshots=%d\n", environment, len(report.Archives), report.InvalidSnapshots)
+	for _, a := range report.Archives {
+		fmt.Fprintf(&summary, "銘柄=%s / valid=%t / rows=%d / backwards=%d / equal_time=%d\n", a.Symbol, a.Valid, a.Rows, a.BackwardSteps, a.EqualTimeSteps)
+		for _, d := range a.Days {
+			fmt.Fprintf(&summary, "  date=%s / rows=%d / minutes_with_trades=%d / unfinished_minutes=%d / reference=%t\n", d.Date, d.Rows, d.MinutesWithTrades, d.UnfinishedMinutes, d.Matches != nil)
+			fmt.Fprintf(&summary, "  同時刻内の順序に依存する分: open=%d / close=%d\n", d.OpenOrderSensitiveMinutes, d.CloseOrderSensitiveMinutes)
+			if m := d.Matches; m != nil {
+				fmt.Fprintf(&summary, "  一致: open=%t / high=%t / low=%t / last=%t / volume=%t / opening_time=%t / last_time=%t\n", m.Open, m.High, m.Low, m.Last, m.Volume, m.OpeningTime, m.LastTime)
+			}
+		}
+	}
+	fmt.Fprintf(&summary, "全件性・独立した情報源との照合・同時刻内の約定順は未確認\n保存: %s\n", path)
+	if _, err := io.WriteString(output, summary.String()); err != nil {
+		return errors.New("履歴確認結果を出力できません")
 	}
 	return nil
 }
