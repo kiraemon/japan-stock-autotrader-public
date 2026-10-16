@@ -35,17 +35,17 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" && command != "feed-demo" && command != "quote-demo" && command != "quote-check" {
-		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / feed-demo / quote-demo / quote-check / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" && command != "feed-demo" && command != "quote-demo" && command != "quote-check" && command != "history-feed-check" {
+		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / feed-demo / quote-demo / quote-check / history-feed-check / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "元JSONまたはCSVのパス（値はログへ表示しない）")
-	reference := fs.String("reference", "", "compare-barsの照合先分足JSON / diagnoseの元歩み値JSON")
+	reference := fs.String("reference", "", "照合先分足JSON / 元歩み値JSON / history-feed-checkの2番目の履歴")
 	format := fs.String("format", "history", "build-barsの入力: history / csv")
 	symbol := fs.String("symbol", "", "CSVの銘柄・市場（例7203@1）")
 	environment := fs.String("environment", "production", "CSVの環境: production / test")
@@ -67,6 +67,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if !r001.ValidVariant(r001.Variant(*variant)) {
 		return errors.New("variantはAまたはBです")
+	}
+	if command == "history-feed-check" {
+		if *captured != "" || *label != "" {
+			return errors.New("history-feed-checkは保存済み履歴の取得・完了時刻だけを使います")
+		}
+		return historyFeedCheck(ctx, out, *input, *reference, *symbol, *environment)
 	}
 	if command == "quote-check" {
 		if *reference != "" || *captured != "" {

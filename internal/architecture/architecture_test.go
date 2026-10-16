@@ -31,7 +31,7 @@ func restrictedCore(name string) bool {
 		return true
 	}
 	switch feature(name) {
-	case "backtest", "buildbars", "comparebars", "papertrade", "replaysignals", "streamsignals":
+	case "backtest", "buildbars", "comparebars", "papertrade", "replaysignals", "streamsignals", "streambars":
 		return true
 	}
 	return false
@@ -123,6 +123,7 @@ func TestImportBoundaryChecksRejectViolations(t *testing.T) {
 		{"feature_to_feature", "features/backtest/run.go", internalPrefix + "features/buildbars"},
 		{"strategy_to_broker", "strategy/r001/rules.go", internalPrefix + "kabu"},
 		{"paper_to_network", "features/papertrade/send.go", "net/http"},
+		{"history_candidates_to_files", "features/streambars/feed.go", "os"},
 		{"data_to_files", "marketdata/bars.go", "os"},
 		{"windows_file_also_checked", "strategy/r001/clock_windows.go", "syscall"},
 	} {
