@@ -35,12 +35,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" {
-		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" {
+		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -68,9 +68,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if !r001.ValidVariant(r001.Variant(*variant)) {
 		return errors.New("variantはAまたはBです")
 	}
-	if command == "paper-demo" {
+	if command == "paper-demo" || command == "paper-replay" {
 		if *input != "" || *reference != "" || *captured != "" || *symbol != "" {
-			return errors.New("paper-demoは組込の合成イベントだけを使います")
+			return errors.New("paper-demo / paper-replayは組込の合成入力だけを使います")
+		}
+		if command == "paper-replay" {
+			return paperReplay(ctx, out, r001.Direction(*direction), r001.Variant(*variant))
 		}
 		return paperDemo(ctx, out)
 	}
