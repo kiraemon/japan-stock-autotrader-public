@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/capturehistory"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/collectquotes"
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
 	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
@@ -49,6 +50,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	count := fs.Int("count", 1, "取得回数（1〜10000）")
 	interval := fs.Duration("interval", 10*time.Second, "保存完了から次の取得までの待機時間（1s〜1h）")
 	untilText := fs.String("until", "", "終了日時: RFC3339（例 2026-10-16T15:35:00+09:00）。countと早い方で終了")
+	historyList := fs.String("history-symbols", "", "開始時に一度だけ歩み値を保存する銘柄（最大10、例7203@1,8306@1）")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -93,6 +95,24 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if len(symbols) > 50 {
 		return errors.New("銘柄数は最大50です。既存のAPI登録銘柄も確認してください")
 	}
+	var historySymbols []string
+	if *historyList != "" {
+		historySeen := map[string]bool{}
+		for _, item := range strings.Split(*historyList, ",") {
+			symbol := strings.TrimSpace(item)
+			if err := kabu.ValidateSymbol(symbol); err != nil {
+				return err
+			}
+			if !historySeen[symbol] {
+				historySymbols = append(historySymbols, symbol)
+				historySeen[symbol] = true
+				seen[symbol] = true
+			}
+		}
+		if len(historySymbols) > 10 || len(seen) > 50 {
+			return errors.New("履歴は最大10銘柄、通常収集との合計は最大50銘柄です")
+		}
+	}
 	if *passwordStdin == *onePassword {
 		return errors.New("-password-stdin または -onepassword のどちらか1つを指定してください")
 	}
@@ -101,6 +121,14 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		return err
 	}
 	defer client.Close()
+	var historyReader capturehistory.Reader
+	if len(historySymbols) > 0 {
+		var ok bool
+		historyReader, ok = client.(capturehistory.Reader)
+		if !ok {
+			return errors.New("履歴取得に対応していない接続です")
+		}
+	}
 	monitor, err := telemetry.Start(ctx, "data", *env, *count)
 	if err != nil {
 		return err
@@ -156,6 +184,20 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		return err
 	}
 	password = ""
+	if len(historySymbols) > 0 {
+		if err := monitor.Phase("collecting"); err != nil {
+			return err
+		}
+		historyCtx := workCtx
+		if !until.IsZero() {
+			var cancel context.CancelFunc
+			historyCtx, cancel = context.WithDeadline(workCtx, until)
+			defer cancel()
+		}
+		if err := capturehistory.Capture(historyCtx, historyReader, kabu.Environment(*env), historySymbols, "data/history/"+*env, output); err != nil {
+			return err
+		}
+	}
 	if !until.IsZero() && !until.After(time.Now()) {
 		return errors.New("終了日時を過ぎたため収集を開始しません")
 	}

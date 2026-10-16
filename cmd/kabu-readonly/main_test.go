@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -215,4 +217,49 @@ func TestScheduledReadSavesPartialAndClosesSession(t *testing.T) {
 	}
 	t.Log(output.String())
 	t.Logf("state=%s / saved=%d / session_closed=%t", status.State, status.Saved, client.closed)
+}
+
+type historySession struct {
+	observedSession
+	historyCalls   int
+	historyFailure bool
+}
+
+func (s *historySession) TimeAndSales(context.Context, string) (json.RawMessage, error) {
+	s.historyCalls++
+	if s.historyFailure {
+		return nil, errors.New("synthetic history failure")
+	}
+	return json.RawMessage(`{"Symbol":"7203","Exchange":1,"TradingPriceCount":0,"TradingPrice":[]}`), nil
+}
+func (s *historySession) Board(context.Context, string) (json.RawMessage, error) {
+	return json.RawMessage(`{"Symbol":"7203","Exchange":1,"TradingVolume":0}`), nil
+}
+
+func TestHistoryBootstrapUsesSameSessionAndArchivesSeparately(t *testing.T) {
+	for _, failure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "failure"}[failure], func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			client := &historySession{historyFailure: failure}
+			opens := 0
+			err := runWithSession(context.Background(), []string{"-symbols", "7203@1", "-history-symbols", "7203@1", "-password-stdin"}, strings.NewReader("synthetic-only\n"), &bytes.Buffer{}, func(kabu.Environment) (session, error) { opens++; return client, nil })
+			files, _ := filepath.Glob("data/history/test/history-*.json")
+			snapshots, _ := filepath.Glob("data/test/snapshot-*.json")
+			if (err != nil) != failure || opens != 1 || client.historyCalls != 1 || !client.closed || len(files) != 1 || (len(snapshots) == 0) != failure {
+				t.Fatal("history/session pipeline failed")
+			}
+			status := telemetry.Observe("data", "test", time.Now())
+			want := "completed"
+			if failure {
+				want = "failed"
+			}
+			if status.State != want {
+				t.Fatalf("state=%s", status.State)
+			}
+			raw, e := os.ReadFile(files[0])
+			if e != nil || !json.Valid(raw) {
+				t.Fatal("history archive invalid")
+			}
+		})
+	}
 }

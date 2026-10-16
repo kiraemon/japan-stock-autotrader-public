@@ -209,3 +209,45 @@ func TestCallerDeadlinePreservedWithoutTransportDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoryHasDedicatedBudgetAndExactAllowlist(t *testing.T) {
+	var mu sync.Mutex
+	var starts []time.Time
+	client := fixture(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		fmt.Fprint(w, `{}`)
+	})
+	client.token = "synthetic-only"
+	for range 3 {
+		if _, err := client.TimeAndSales(context.Background(), "7203@1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 1; i < len(starts); i++ {
+		if starts[i].Sub(starts[i-1]) < 950*time.Millisecond {
+			t.Fatal("history exceeded conservative budget")
+		}
+	}
+	for _, path := range []string{"/timeandsales/7203@1?after=1", "/timeandsales/7203@1/../sendorder", "/timeandsales/7203@9", "/timeandsales/"} {
+		if allowed("GET", path) {
+			t.Fatal("unsafe history path allowed")
+		}
+	}
+	if allowed("POST", "/timeandsales/7203@1") {
+		t.Fatal("history write allowed")
+	}
+}
+
+func TestLargeHistoryDoesNotIncreaseOrdinaryResponseLimit(t *testing.T) {
+	body := `{"padding":"` + strings.Repeat("x", 9<<20) + `"}`
+	client := fixture(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, body) })
+	client.token = "synthetic-only"
+	if _, err := client.TimeAndSales(context.Background(), "7203@1"); err != nil {
+		t.Fatal("available history truncated by board limit")
+	}
+	if _, err := client.Board(context.Background(), "7203@1"); err == nil {
+		t.Fatal("ordinary API response limit increased")
+	}
+}

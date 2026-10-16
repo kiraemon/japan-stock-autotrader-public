@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,13 +37,14 @@ func ValidateSymbol(symbol string) error {
 // Client contains credentials only in memory. It must not be logged or serialized.
 // Requests are serialized and spaced by at least 250ms. No automatic retries.
 type Client struct {
-	mu     sync.Mutex
-	base   string
-	http   *http.Client
-	token  string
-	next   time.Time
-	closed bool
-	guard  *instanceguard.Guard
+	mu         sync.Mutex
+	base       string
+	http       *http.Client
+	token      string
+	next       time.Time
+	nextTrades time.Time
+	closed     bool
+	guard      *instanceguard.Guard
 }
 
 // Open is the only production constructor. One owner covers both environments,
@@ -134,6 +136,15 @@ func (c *Client) Board(ctx context.Context, symbol string) (json.RawMessage, err
 	return c.read(ctx, "/board/"+symbol, false)
 }
 
+// TimeAndSales fetches the available history, not an arbitrary date range.
+// The shared request owner applies a separate conservative one-second budget.
+func (c *Client) TimeAndSales(ctx context.Context, symbol string) (json.RawMessage, error) {
+	if err := ValidateSymbol(symbol); err != nil {
+		return nil, err
+	}
+	return c.read(ctx, "/timeandsales/"+symbol, false)
+}
+
 func (c *Client) Cash(ctx context.Context) (json.RawMessage, error) {
 	return c.read(ctx, "/wallet/cash", false)
 }
@@ -189,8 +200,12 @@ func allowed(method, path string) bool {
 	case "/wallet/cash", "/wallet/margin", "/positions?product=1&addinfo=true", "/positions?product=2&addinfo=true":
 		return true
 	}
-	const prefix = "/board/"
-	return len(path) > len(prefix) && path[:len(prefix)] == prefix && ValidateSymbol(path[len(prefix):]) == nil
+	for _, prefix := range []string{"/board/", "/timeandsales/"} {
+		if len(path) > len(prefix) && path[:len(prefix)] == prefix && ValidateSymbol(path[len(prefix):]) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body []byte) (json.RawMessage, error) {
@@ -203,7 +218,12 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 	if !allowed(method, path) {
 		return nil, errors.New("読み取り専用APIの許可範囲外です")
 	}
-	if wait := time.Until(c.next); wait > 0 {
+	trades := strings.HasPrefix(path, "/timeandsales/")
+	next := c.next
+	if trades && c.nextTrades.After(next) {
+		next = c.nextTrades
+	}
+	if wait := time.Until(next); wait > 0 {
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
 		select {
@@ -213,6 +233,9 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 		}
 	}
 	c.next = time.Now().Add(250 * time.Millisecond)
+	if trades {
+		c.nextTrades = time.Now().Add(time.Second)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, errors.New("APIリクエストを作成できません")
@@ -236,12 +259,15 @@ func (c *Client) request(ctx context.Context, method, path string, body []byte) 
 		}
 		return nil, fmt.Errorf("API HTTP %d（応答本文は記録しません）", resp.StatusCode)
 	}
-	const limit = 8 << 20
+	limit := int64(8 << 20)
+	if trades {
+		limit = 64 << 20
+	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 		return nil, fmt.Errorf("取得を中断しました: %w", ctx.Err())
 	}
-	if err != nil || len(raw) > limit || !json.Valid(raw) {
+	if err != nil || int64(len(raw)) > limit || !json.Valid(raw) {
 		return nil, errors.New("API応答を正常に読み取れません")
 	}
 	return raw, nil
