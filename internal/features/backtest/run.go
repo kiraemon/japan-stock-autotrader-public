@@ -41,23 +41,29 @@ type Cost struct {
 	MedianBPS    *string `json:"median_net_return_bps,omitempty"`
 }
 type Report struct {
-	Version                   int            `json:"report_version"`
-	Rule                      string         `json:"strategy_version"`
-	Model                     string         `json:"execution_model_version"`
-	Direction                 r001.Direction `json:"direction"`
-	Symbol                    string         `json:"symbol"`
-	PriceScale                int64          `json:"price_scale"`
-	Scope                     string         `json:"scope"`
-	SourceSHA256              string         `json:"source_sha256"`
-	StrategyAdopted           bool           `json:"strategy_adopted"`
-	PortfolioMode             bool           `json:"portfolio_mode"`
-	ShortAvailabilityVerified bool           `json:"short_availability_verified"`
-	Days                      []Result       `json:"days"`
-	Costs                     []Cost         `json:"cost_sensitivity"`
-	BaselineCosts             []Cost         `json:"baseline_cost_sensitivity"`
+	Version                   int              `json:"report_version"`
+	Rule                      string           `json:"strategy_version"`
+	Model                     string           `json:"execution_model_version"`
+	Direction                 r001.Direction   `json:"direction"`
+	Symbol                    string           `json:"symbol"`
+	PriceScale                int64            `json:"price_scale"`
+	Scope                     string           `json:"scope"`
+	SourceSHA256              string           `json:"source_sha256"`
+	StrategyAdopted           bool             `json:"strategy_adopted"`
+	PortfolioMode             bool             `json:"portfolio_mode"`
+	ShortAvailabilityVerified bool             `json:"short_availability_verified"`
+	Days                      []Result         `json:"days"`
+	Costs                     []Cost           `json:"cost_sensitivity"`
+	BaselineCosts             []Cost           `json:"baseline_cost_sensitivity"`
+	Diagnostic                *PriceDiagnostic `json:"price_diagnostic,omitempty"`
 }
 
 func Run(ctx context.Context, input marketdata.Dataset, direction r001.Direction) (Report, error) {
+	return run(ctx, input, direction, nil)
+}
+
+// priceOnly is private to Diagnose. Normal Run never accepts a quality override.
+func run(ctx context.Context, input marketdata.Dataset, direction r001.Direction, priceOnly map[string][]string) (Report, error) {
 	r := Report{Version: 1, Rule: r001.Version(direction), Model: ModelVersion, Direction: direction, Symbol: input.Symbol, PriceScale: marketdata.PriceScale, SourceSHA256: input.Source.SHA256, Scope: "price_pattern_only", Days: []Result{}}
 	if input.Origin == "synthetic" {
 		r.Scope = "synthetic_logic_test"
@@ -73,9 +79,16 @@ func Run(ctx context.Context, input marketdata.Dataset, direction r001.Direction
 			return r, errors.New("バックテストを中断しました")
 		}
 		result := Result{Date: day.Date, Reasons: []string{}}
-		if input.Origin == "observed" && len(day.Issues) == 0 {
-			// v0.1 has no verified-source ingestion path. Missing quality fields
-			// must never turn observed data into an eligible dataset.
+		if priceOnly != nil {
+			reasons, assessed := priceOnly[day.Date]
+			if !assessed {
+				reasons = []string{"diagnostic_evidence_missing"}
+			}
+			// This local day is a value copy; original quality stays on the
+			// input and in the diagnostic evidence, never promoted to verified.
+			day.Issues = reasons
+		} else if input.Origin == "observed" && len(day.Issues) == 0 {
+			// Missing quality fields must not turn observed input into eligible data.
 			day.Issues = []string{"real_data_verification_pending"}
 		}
 		if len(day.Issues) > 0 {

@@ -35,17 +35,17 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "backtest" {
-		return errors.New("demo / build-bars / compare-bars / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" {
+		return errors.New("demo / build-bars / compare-bars / diagnose / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "元JSONまたはCSVのパス（値はログへ表示しない）")
-	reference := fs.String("reference", "", "compare-barsの照合先分足JSON（品質の自動昇格なし）")
+	reference := fs.String("reference", "", "compare-barsの照合先分足JSON / diagnoseの元歩み値JSON")
 	format := fs.String("format", "history", "build-barsの入力: history / csv")
 	symbol := fs.String("symbol", "", "CSVの銘柄・市場（例7203@1）")
 	environment := fs.String("environment", "production", "CSVの環境: production / test")
@@ -63,6 +63,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if !r001.Valid(r001.Direction(*direction)) {
 		return errors.New("directionはlongまたはshortです")
+	}
+	if command == "diagnose" {
+		return diagnose(ctx, out, diagnosticOptions{Input: *input, Reference: *reference, Symbol: *symbol, Environment: *environment, Label: *label, Captured: *captured, Direction: r001.Direction(*direction)})
 	}
 	var dataset marketdata.Dataset
 	var raw []byte
