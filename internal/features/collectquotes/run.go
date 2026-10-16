@@ -18,6 +18,9 @@ type Options struct {
 	Directory   string
 	Observe     func(Progress) error
 	Until       time.Time
+	// BeforeCollect runs serially inside this run's cancellation/deadline scope.
+	// The caller can compose another read-only capture using the same session.
+	BeforeCollect func(context.Context) error
 }
 
 // Progress contains metadata only. The caller connects it to shared observation.
@@ -69,6 +72,14 @@ func Run(ctx context.Context, client Reader, options Options, output io.Writer) 
 	return repeat(ctx, options.Count, options.Interval, func() error {
 		iteration++
 		if err := notify("collecting", false); err != nil {
+			return err
+		}
+		if options.BeforeCollect != nil {
+			if err := options.BeforeCollect(ctx); err != nil {
+				return err
+			}
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		snapshot, collectErr := Collect(ctx, client, options.Environment, options.Symbols)

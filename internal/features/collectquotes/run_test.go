@@ -11,6 +11,24 @@ import (
 	"time"
 )
 
+func TestBeforeCollectFailureStopsBeforeSnapshotAndSharesDeadline(t *testing.T) {
+	directory := t.TempDir()
+	reader := &fakeReader{}
+	failure := errors.New("synthetic history save failure")
+	calls := 0
+	err := Run(context.Background(), reader, Options{Environment: "test", Symbols: []string{"7203@1"}, Count: 2, Interval: time.Second, Directory: directory, Until: time.Now().Add(time.Hour), BeforeCollect: func(ctx context.Context) error {
+		calls++
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("capture not inside run deadline")
+		}
+		return failure
+	}}, &bytes.Buffer{})
+	files, _ := filepath.Glob(filepath.Join(directory, "snapshot-*.json"))
+	if !errors.Is(err, failure) || calls != 1 || reader.calls != 0 || len(files) != 0 {
+		t.Fatal("capture failure did not stop collection")
+	}
+}
+
 func TestRunSixSnapshotsAndPreservesSchema(t *testing.T) {
 	directory := t.TempDir()
 	reader := &fakeReader{}

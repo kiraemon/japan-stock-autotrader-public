@@ -51,6 +51,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	interval := fs.Duration("interval", 10*time.Second, "保存完了から次の取得までの待機時間（1s〜1h）")
 	untilText := fs.String("until", "", "終了日時: RFC3339（例 2026-10-16T15:35:00+09:00）。countと早い方で終了")
 	historyList := fs.String("history-symbols", "", "開始時に一度だけ歩み値を保存する銘柄（最大10、例7203@1,8306@1）")
+	historyEvery := fs.Duration("history-every", 0, "歩み値保存完了から再取得までの最小間隔（0で起動時のみ、1m〜1h）")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -62,6 +63,9 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	}
 	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
 		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
+	}
+	if *historyEvery != 0 && (*historyEvery < time.Minute || *historyEvery > time.Hour || *historyList == "") {
+		return errors.New("history-everyはhistory-symbolsと合わせて1m〜1hで指定してください（0は起動時のみ）")
 	}
 	var until time.Time
 	if *untilText != "" {
@@ -206,10 +210,17 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 			return errors.New("開始結果を出力できません")
 		}
 	}
+	var beforeCollect func(context.Context) error
+	if *historyEvery > 0 {
+		beforeCollect = historyRefresh(*historyEvery, time.Now, func(ctx context.Context) error {
+			return capturehistory.Capture(ctx, historyReader, kabu.Environment(*env), historySymbols, "data/history/"+*env, output)
+		})
+	}
 	return collectquotes.Run(workCtx, client, collectquotes.Options{
 		Environment: kabu.Environment(*env), Symbols: symbols,
 		Count: *count, Interval: *interval, Directory: "data/" + *env,
-		Until: until,
+		Until:         until,
+		BeforeCollect: beforeCollect,
 		Observe: func(p collectquotes.Progress) error {
 			if p.Phase == "saved" {
 				return monitor.Saved(p.Complete)
