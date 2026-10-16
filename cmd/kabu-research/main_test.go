@@ -97,6 +97,31 @@ func TestCSVConversionAndRealDataStayUnverified(t *testing.T) {
 	if !strings.Contains(out.String(), "trades=0 / unevaluable=1") {
 		t.Fatal("unverified source produced trades")
 	}
+	out.Reset()
+	if err := run(context.Background(), []string{"compare-bars", "-input", files[0], "-reference", files[0]}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "compared=1 / ohlcv_matches=1") || !strings.Contains(out.String(), "quality_promoted=false") {
+		t.Fatal("comparison falsely promoted quality or lost matches")
+	}
+	manifests, _ = filepath.Glob("data/research/research-run-*.json")
+	found := false
+	for _, path := range manifests {
+		raw, _ := os.ReadFile(path)
+		var m struct {
+			Command  string                           `json:"command"`
+			Settings struct{ ReferenceSHA256 string } `json:"settings"`
+		}
+		if json.Unmarshal(raw, &m) != nil {
+			t.Fatal("comparison manifest decode")
+		}
+		if m.Command == "compare-bars" {
+			found = m.Settings.ReferenceSHA256 == hash(barsRaw)
+		}
+	}
+	if !found {
+		t.Fatal("comparison lost exact reference input hash")
+	}
 }
 func TestInvalidCommandsCancellationAndSecretInputDoNotLeak(t *testing.T) {
 	t.Chdir(t.TempDir())

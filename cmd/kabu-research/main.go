@@ -17,6 +17,7 @@ import (
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/backtest"
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/comparebars"
 	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
 	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
 )
@@ -34,16 +35,17 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "backtest" {
-		return errors.New("demo / build-bars / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "backtest" {
+		return errors.New("demo / build-bars / compare-bars / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "元JSONまたはCSVのパス（値はログへ表示しない）")
+	reference := fs.String("reference", "", "compare-barsの照合先分足JSON（品質の自動昇格なし）")
 	format := fs.String("format", "history", "build-barsの入力: history / csv")
 	symbol := fs.String("symbol", "", "CSVの銘柄・市場（例7203@1）")
 	environment := fs.String("environment", "production", "CSVの環境: production / test")
@@ -122,6 +124,39 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		if json.Unmarshal(raw, &dataset) != nil {
 			return errors.New("分足JSONを読み取れません")
 		}
+	}
+	if command == "compare-bars" {
+		if *reference == "" {
+			return errors.New("-referenceに照合先の分足JSONを指定してください")
+		}
+		refRaw, err := readInput(*reference)
+		if err != nil {
+			return err
+		}
+		var ref marketdata.Dataset
+		if json.Unmarshal(refRaw, &ref) != nil {
+			return errors.New("照合先の分足JSONを読み取れません")
+		}
+		report, err := comparebars.Compare(ctx, dataset, ref)
+		if err != nil {
+			return err
+		}
+		path, reportRaw, err := save("bar-comparison", report)
+		if err != nil {
+			return err
+		}
+		settings := struct{ Comparator, ReferenceFile, ReferenceSHA256 string }{comparebars.Version, filepath.Base(*reference), hash(refRaw)}
+		manifest, err := recordRun(command, filepath.Base(*input), raw, dataset.Source.SHA256, path, reportRaw, settings)
+		if err != nil {
+			return err
+		}
+		for _, day := range report.Days {
+			if _, err := fmt.Fprintf(out, "分足照合: date=%s / compared=%d / ohlcv_matches=%d / unfinished=%d / only_input=%d / only_reference=%d\n", day.Date, day.Compared, day.AllMatches, day.Unfinished, day.OnlyInput, day.OnlyReference); err != nil {
+				return errors.New("照合結果を出力できません")
+			}
+		}
+		_, err = fmt.Fprintf(out, "保存: %s\n実行記録: %s\nquality_promoted=false（同一提供元の照合・全約定や実約定の保証なし）\n", path, manifest)
+		return err
 	}
 	inputName := filepath.Base(*input)
 	if command == "demo" {

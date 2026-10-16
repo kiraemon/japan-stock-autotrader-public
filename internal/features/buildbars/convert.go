@@ -20,7 +20,7 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
 )
 
-const Version = "buildbars-v0.1"
+const Version = "buildbars-v0.2"
 
 func sourceHash(raw []byte) string { s := sha256.Sum256(raw); return hex.EncodeToString(s[:]) }
 func dataset(raw []byte, symbol, environment, format string, received time.Time) marketdata.Dataset {
@@ -156,18 +156,31 @@ func FromHistory(ctx context.Context, raw []byte) (marketdata.Dataset, error) {
 }
 
 // FromCSV accepts an explicit minute-label convention, never guesses it.
-// UTF-8 headers are recognized; other native export variants await a sample.
+// The native six-column export has a combined date/time and a known CP932
+// header. Only that exact legacy header is mapped; numeric rows remain ASCII.
 func FromCSV(ctx context.Context, raw []byte, symbol, environment, label string, received time.Time) (marketdata.Dataset, error) {
 	d := dataset(raw, symbol, environment, "chart-csv", received)
 	d.Source.Label = label
-	if len(raw) > 64<<20 || !utf8.Valid(raw) || (label != "start" && label != "end") || received.IsZero() {
-		return d, errors.New("CSVはUTF-8、開始/終了ラベルと取得日時を明示してください")
+	if len(raw) > 64<<20 || (label != "start" && label != "end") || received.IsZero() {
+		return d, errors.New("CSVのサイズ、開始/終了ラベルと取得日時を確認してください")
 	}
-	r := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})))
+	input, format, err := csvInput(raw)
+	if err != nil {
+		return d, err
+	}
+	d.Source.Format = format
+	r := csv.NewReader(bytes.NewReader(input))
 	r.FieldsPerRecord = -1
 	header, err := r.Read()
 	if err != nil {
 		return d, errors.New("CSVの見出しを読み取れません")
+	}
+	native := strings.Join(header, ",") == "日付,始値,高値,安値,終値,売買高"
+	if native {
+		header = []string{"datetime", "open", "high", "low", "close", "volume"}
+		if format == "chart-csv" {
+			d.Source.Format = "kabu-chart-csv-utf8"
+		}
 	}
 	aliases := map[string]string{"日付": "date", "時刻": "time", "始値": "open", "高値": "high", "安値": "low", "終値": "close", "出来高": "volume"}
 	columns := map[string]int{}
@@ -177,14 +190,20 @@ func FromCSV(ctx context.Context, raw []byte, symbol, environment, label string,
 			h = alias
 		}
 		switch h {
-		case "date", "time", "open", "high", "low", "close", "volume":
+		case "datetime", "date", "time", "open", "high", "low", "close", "volume":
 			if _, exists := columns[h]; exists {
 				return d, errors.New("CSVの必要列が重複しています")
 			}
 			columns[h] = i
 		}
 	}
-	for _, h := range []string{"date", "time", "open", "high", "low", "close", "volume"} {
+	required := []string{"date", "time", "open", "high", "low", "close", "volume"}
+	if native {
+		required = []string{"datetime", "open", "high", "low", "close", "volume"}
+	} else if _, ambiguous := columns["datetime"]; ambiguous {
+		return d, errors.New("日時結合列はkabuの6列形式だけに対応しています")
+	}
+	for _, h := range required {
 		if _, ok := columns[h]; !ok {
 			return d, errors.New("CSVの必要列が見つかりません（date,time,open,high,low,close,volume）")
 		}
@@ -205,11 +224,17 @@ func FromCSV(ctx context.Context, raw []byte, symbol, environment, label string,
 			return d, errors.New("CSVの行形式・件数を確認してください")
 		}
 		field := func(name string) string { return strings.TrimSpace(fields[columns[name]]) }
-		clock := field("time")
-		if strings.Count(clock, ":") == 1 {
-			clock += ":00"
+		var datetime string
+		if native {
+			datetime = strings.ReplaceAll(field("datetime"), "/", "-")
+		} else {
+			clock := field("time")
+			if strings.Count(clock, ":") == 1 {
+				clock += ":00"
+			}
+			datetime = strings.ReplaceAll(field("date"), "/", "-") + " " + clock
 		}
-		stamp, err := time.ParseInLocation("2006-01-02 15:04:05", strings.ReplaceAll(field("date"), "/", "-")+" "+clock, marketdata.JST)
+		stamp, err := time.ParseInLocation("2006-01-02 15:04:05", datetime, marketdata.JST)
 		if err != nil || !stamp.Equal(stamp.Truncate(time.Minute)) || stamp.After(received) {
 			return d, errors.New("CSVの日時を確認してください")
 		}
@@ -258,4 +283,24 @@ func FromCSV(ctx context.Context, raw []byte, symbol, environment, label string,
 	}
 	sort.Slice(d.Days, func(i, j int) bool { return d.Days[i].Date < d.Days[j].Date })
 	return d, marketdata.Validate(d)
+}
+
+// This is not a general CP932 decoder: unknown headers, encodings and
+// non-ASCII legacy data rows are refused instead of replacing invalid bytes.
+const nativeCP932Header = "\x93\xfa\x95\x74,\x8e\x6e\x92\x6c,\x8d\x82\x92\x6c,\x88\xc0\x92\x6c,\x8f\x49\x92\x6c,\x94\x84\x94\x83\x8d\x82"
+
+func csvInput(raw []byte) ([]byte, string, error) {
+	if utf8.Valid(raw) {
+		return bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf}), "chart-csv", nil
+	}
+	header, rows, ok := bytes.Cut(raw, []byte{'\n'})
+	if !ok || string(bytes.TrimSuffix(header, []byte{'\r'})) != nativeCP932Header {
+		return nil, "", errors.New("CSVの文字コード・見出しは未対応です（UTF-8または確認済みkabuのCP932形式）")
+	}
+	for _, b := range rows {
+		if b >= 0x80 {
+			return nil, "", errors.New("kabuのCP932形式のデータ行に未対応の文字があります")
+		}
+	}
+	return append([]byte("日付,始値,高値,安値,終値,売買高\n"), rows...), "kabu-chart-csv-cp932", nil
 }

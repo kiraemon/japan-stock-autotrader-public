@@ -22,6 +22,38 @@ func has(reasons []string, want string) bool {
 	}
 	return false
 }
+
+func TestNativeCSVPreservesOriginalBytesAndBoundaries(t *testing.T) {
+	const rows = "2026/10/15 09:00:00,100,101,99,100.5,100\r\n2026/10/16 09:00:00,101,102,100,101.5,200\r\n2026/10/16 11:30:00,102,102,102,102,300\r\n"
+	for _, header := range []string{nativeCP932Header, "日付,始値,高値,安値,終値,売買高", "\xef\xbb\xbf日付,始値,高値,安値,終値,売買高"} {
+		raw := []byte(header + "\r\n" + rows)
+		before := string(raw)
+		d, err := FromCSV(context.Background(), raw, "7203@1", "production", "start", marketdata.Clock("2026-10-16", 12, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != before || d.Source.SHA256 != sourceHash(raw) || len(d.Days) != 2 || len(d.Days[1].Bars) != 1 || len(d.Days[1].Events) != 1 {
+			t.Fatal("source changed, hash lost or boundary incorrectly bucketed")
+		}
+		want := "kabu-chart-csv-utf8"
+		if header == nativeCP932Header {
+			want = "kabu-chart-csv-cp932"
+		}
+		if d.Source.Format != want || d.Days[0].Bars[0].FirstRow != 2 || d.Days[1].Bars[0].FirstRow != 3 || !has(d.Days[0].Issues, "csv_semantics_unverified") {
+			t.Fatal("format, row provenance or quality lost")
+		}
+	}
+	for _, raw := range []string{
+		strings.Replace(nativeCP932Header, "\x93", "\x94", 1) + "\r\n" + rows,
+		nativeCP932Header + "\r\n" + strings.Replace(rows, "100,", "\x81,", 1),
+		"datetime,open,high,low,close,volume\n" + rows,
+		"日付,始値,高値,安値,終値,売買高\n" + strings.Replace(rows, "09:00:00", "09:00:01", 1),
+	} {
+		if _, err := FromCSV(context.Background(), []byte(raw), "7203@1", "production", "start", marketdata.Clock("2026-10-16", 12, 0)); err == nil {
+			t.Fatal("unsupported native variant accepted")
+		}
+	}
+}
 func TestHistoryKeepsRowsOrderAmbiguityAndUnfinishedMinute(t *testing.T) {
 	raw := archiveFixture(`[{"Time":"2026-10-16T09:00:00+09:00","Price":100.1,"Volume":10},{"Time":"2026-10-16T00:00:00Z","Price":101,"Volume":20},{"Time":"2026-10-16T09:00:20+09:00","Price":99,"Volume":30}]`, 3, "2026-10-16T09:00:30+09:00")
 	d, err := FromHistory(context.Background(), raw)
