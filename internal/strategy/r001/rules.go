@@ -2,14 +2,63 @@
 // wall clocks, or execution assumptions.
 package r001
 
-import "time"
+import (
+	"math/big"
+	"strings"
+	"time"
+)
 
 type Direction string
+type Variant string
 
 const (
 	Long  Direction = "long"
 	Short Direction = "short"
+	A     Variant   = "A"
+	B     Variant   = "B"
 )
+
+func ValidVariant(v Variant) bool { return v == A || v == B }
+func VersionFor(d Direction, v Variant) string {
+	return strings.TrimSuffix(Version(d), "A") + string(v)
+}
+
+type VolumeDecision struct {
+	Passed       bool   `json:"passed"`
+	Reason       string `json:"reason"`
+	SignalVolume *int64 `json:"signal_volume_shares"`
+	PreviousSum  string `json:"previous_5_volume_sum"`
+}
+
+// VolumeFilter compares integers exactly, including sums larger than int64.
+func VolumeFilter(signal *int64, previous []*int64) VolumeDecision {
+	r := VolumeDecision{Reason: "volume_input_unavailable"}
+	if signal == nil || *signal < 0 || len(previous) != 5 {
+		return r
+	}
+	v := *signal
+	r.SignalVolume = &v
+	sum := new(big.Int)
+	for _, q := range previous {
+		if q == nil || *q < 0 {
+			return r
+		}
+		sum.Add(sum, big.NewInt(*q))
+	}
+	r.PreviousSum = sum.String()
+	if sum.Sign() == 0 {
+		r.Reason = "volume_baseline_zero"
+		return r
+	}
+	left := new(big.Int).Mul(big.NewInt(v), big.NewInt(10))
+	right := new(big.Int).Mul(sum, big.NewInt(3))
+	r.Passed = left.Cmp(right) >= 0
+	r.Reason = "volume_below_1_5x_previous_5"
+	if r.Passed {
+		r.Reason = ""
+	}
+	return r
+}
 
 func Valid(d Direction) bool { return d == Long || d == Short }
 func Version(d Direction) string {

@@ -41,6 +41,10 @@ type PriceDayCheck struct {
 // only because its early trade happens to have an available exit. The input
 // datasets are not mutated. This does not verify trading status or execution.
 func Diagnose(ctx context.Context, csv, history marketdata.Dataset, direction r001.Direction) (Report, error) {
+	return DiagnoseVariant(ctx, csv, history, direction, r001.A)
+}
+
+func DiagnoseVariant(ctx context.Context, csv, history marketdata.Dataset, direction r001.Direction, variant r001.Variant) (Report, error) {
 	for _, d := range []marketdata.Dataset{csv, history} {
 		if err := marketdata.Validate(d); err != nil {
 			return Report{}, err
@@ -110,7 +114,7 @@ func Diagnose(ctx context.Context, csv, history marketdata.Dataset, direction r0
 		assessments[day.Date] = check.Reasons
 		evidence.Days = append(evidence.Days, check)
 	}
-	r, err := run(ctx, csv, direction, assessments)
+	r, err := run(ctx, csv, direction, variant, assessments)
 	if err != nil {
 		return r, err
 	}

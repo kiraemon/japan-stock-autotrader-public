@@ -25,13 +25,14 @@ type Trade struct {
 	GrossBPS   string    `json:"gross_return_bps"`
 }
 type Result struct {
-	Date           string     `json:"date_jst"`
-	Status         string     `json:"status"`
-	Reasons        []string   `json:"reasons"`
-	Trade          *Trade     `json:"trade,omitempty"`
-	Baseline       *Trade     `json:"baseline,omitempty"`
-	BaselineReason string     `json:"baseline_reason,omitempty"`
-	CandidateAt    *time.Time `json:"candidate_at,omitempty"`
+	Date           string               `json:"date_jst"`
+	Status         string               `json:"status"`
+	Reasons        []string             `json:"reasons"`
+	Trade          *Trade               `json:"trade,omitempty"`
+	Baseline       *Trade               `json:"baseline,omitempty"`
+	BaselineReason string               `json:"baseline_reason,omitempty"`
+	CandidateAt    *time.Time           `json:"candidate_at,omitempty"`
+	Filter         *r001.VolumeDecision `json:"volume_filter,omitempty"`
 }
 type Cost struct {
 	RoundTripBPS int64   `json:"round_trip_bps"`
@@ -45,6 +46,7 @@ type Report struct {
 	Rule                      string           `json:"strategy_version"`
 	Model                     string           `json:"execution_model_version"`
 	Direction                 r001.Direction   `json:"direction"`
+	Variant                   r001.Variant     `json:"variant"`
 	Symbol                    string           `json:"symbol"`
 	PriceScale                int64            `json:"price_scale"`
 	Scope                     string           `json:"scope"`
@@ -59,17 +61,24 @@ type Report struct {
 }
 
 func Run(ctx context.Context, input marketdata.Dataset, direction r001.Direction) (Report, error) {
-	return run(ctx, input, direction, nil)
+	return RunVariant(ctx, input, direction, r001.A)
+}
+
+func RunVariant(ctx context.Context, input marketdata.Dataset, direction r001.Direction, variant r001.Variant) (Report, error) {
+	return run(ctx, input, direction, variant, nil)
 }
 
 // priceOnly is private to Diagnose. Normal Run never accepts a quality override.
-func run(ctx context.Context, input marketdata.Dataset, direction r001.Direction, priceOnly map[string][]string) (Report, error) {
-	r := Report{Version: 1, Rule: r001.Version(direction), Model: ModelVersion, Direction: direction, Symbol: input.Symbol, PriceScale: marketdata.PriceScale, SourceSHA256: input.Source.SHA256, Scope: "price_pattern_only", Days: []Result{}}
+func run(ctx context.Context, input marketdata.Dataset, direction r001.Direction, variant r001.Variant, priceOnly map[string][]string) (Report, error) {
+	r := Report{Version: 1, Rule: r001.VersionFor(direction, variant), Model: ModelVersion, Direction: direction, Variant: variant, Symbol: input.Symbol, PriceScale: marketdata.PriceScale, SourceSHA256: input.Source.SHA256, Scope: "price_pattern_only", Days: []Result{}}
 	if input.Origin == "synthetic" {
 		r.Scope = "synthetic_logic_test"
 	}
 	if !r001.Valid(direction) {
 		return r, errors.New("directionはlongまたはshortを指定してください")
+	}
+	if !r001.ValidVariant(variant) {
+		return r, errors.New("variantはAまたはBを指定してください")
 	}
 	if err := marketdata.Validate(input); err != nil {
 		return r, err
@@ -103,45 +112,41 @@ func run(ctx context.Context, input marketdata.Dataset, direction r001.Direction
 			bars[b.Start.UTC()] = b
 		}
 		result.Baseline, result.BaselineReason = baseline(bars, day.Date, direction)
-		boundary := int64(0)
-		if direction == r001.Short {
-			boundary = marketdata.MaxPrice
-		}
 		start := marketdata.Clock(day.Date, 9, 0)
-		var previous int64
-		failed := ""
-		for minute := 0; minute < 15; minute++ {
-			b, reason := usable(bars, start.Add(time.Duration(minute)*time.Minute))
-			if reason != "" {
-				failed = reason
-				break
-			}
-			if direction == r001.Long && b.High > boundary {
-				boundary = b.High
-			}
-			if direction == r001.Short && b.Low < boundary {
-				boundary = b.Low
-			}
-			previous = b.Close
-		}
-		if failed != "" {
-			result.Status = "unevaluable"
-			result.Reasons = append(result.Reasons, "initial_range:"+failed)
-			r.Days = append(r.Days, result)
-			continue
-		}
+		scanner, _ := r001.NewScanner(day.Date, direction, variant)
 		result.Status = "no_signal"
-		for at := start.Add(15 * time.Minute); r001.SignalWindow(at); at = at.Add(time.Minute) {
+		for minute := 0; minute < 90; minute++ {
+			if ctx.Err() != nil {
+				return r, errors.New("バックテストを中断しました")
+			}
+			at := start.Add(time.Duration(minute) * time.Minute)
 			b, reason := usable(bars, at)
 			if reason != "" {
 				result.Status = "unevaluable"
-				result.Reasons = append(result.Reasons, "signal_window:"+reason)
+				prefix := "signal_window:"
+				if minute < 15 {
+					prefix = "initial_range:"
+				}
+				result.Reasons = append(result.Reasons, prefix+reason)
 				break
 			}
-			if r001.Crossed(direction, previous, b.Close, boundary) {
-				signalAt := at.Add(time.Minute)
+			decision, err := scanner.Observe(at.Add(time.Minute), b)
+			if err != nil {
+				return r, err
+			}
+			if decision != nil {
+				signalAt := decision.At
 				result.CandidateAt = &signalAt
-				trade, reason := execute(bars, signalAt, boundary, direction)
+				result.Filter = decision.Volume
+				if !decision.Accepted {
+					result.Status = "filtered"
+					if decision.Reason != "volume_below_1_5x_previous_5" {
+						result.Status = "unevaluable"
+					}
+					result.Reasons = append(result.Reasons, decision.Reason)
+					break
+				}
+				trade, reason := execute(bars, signalAt, decision.Boundary, direction)
 				if reason != "" {
 					result.Status = "unevaluable"
 					result.Reasons = append(result.Reasons, reason)
@@ -151,7 +156,6 @@ func run(ctx context.Context, input marketdata.Dataset, direction r001.Direction
 				}
 				break
 			}
-			previous = b.Close
 		}
 		r.Days = append(r.Days, result)
 	}

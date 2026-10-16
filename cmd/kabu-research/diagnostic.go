@@ -16,6 +16,7 @@ import (
 type diagnosticOptions struct {
 	Input, Reference, Symbol, Environment, Label, Captured string
 	Direction                                              r001.Direction
+	Variant                                                r001.Variant
 }
 
 func diagnose(ctx context.Context, out io.Writer, opts diagnosticOptions) error {
@@ -42,7 +43,7 @@ func diagnose(ctx context.Context, out io.Writer, opts diagnosticOptions) error 
 	if err != nil {
 		return err
 	}
-	report, err := backtest.Diagnose(ctx, csv, history, opts.Direction)
+	report, err := backtest.DiagnoseVariant(ctx, csv, history, opts.Direction, opts.Variant)
 	if err != nil {
 		return err
 	}
@@ -53,9 +54,10 @@ func diagnose(ctx context.Context, out io.Writer, opts diagnosticOptions) error 
 	settings := struct {
 		Rule, Model, Diagnostic, Converter, Symbol, Environment, Label, Captured string
 		Direction                                                                r001.Direction
+		Variant                                                                  r001.Variant
 		ReferenceFile, ReferenceSHA256                                           string
 		Costs                                                                    []int64
-	}{report.Rule, report.Model, backtest.DiagnosticVersion, buildbars.Version, opts.Symbol, opts.Environment, opts.Label, opts.Captured, opts.Direction, filepath.Base(opts.Reference), hash(refRaw), []int64{0, 5, 10, 20}}
+	}{report.Rule, report.Model, backtest.DiagnosticVersion, buildbars.Version, opts.Symbol, opts.Environment, opts.Label, opts.Captured, opts.Direction, opts.Variant, filepath.Base(opts.Reference), hash(refRaw), []int64{0, 5, 10, 20}}
 	manifest, err := recordRun("diagnose", filepath.Base(opts.Input), raw, csv.Source.SHA256, path, outputRaw, settings)
 	if err != nil {
 		return err

@@ -35,12 +35,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" {
-		return errors.New("demo / build-bars / compare-bars / diagnose / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" {
+		return errors.New("demo / build-bars / compare-bars / diagnose / replay / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -52,6 +52,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	label := fs.String("csv-label", "", "CSVの時刻ラベル: start / end（必須、取得元の仕様を確認）")
 	captured := fs.String("captured-at", "", "CSV取得日時: RFC3339（CSV時刻の意味は別途確認）")
 	direction := fs.String("direction", "long", "研究方向: long / short（別仮説として集計）")
+	variant := fs.String("variant", "A", "研究ルール: A / B（Bは直前5本の平均出来高の1.5倍以上）")
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -64,13 +65,16 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if !r001.Valid(r001.Direction(*direction)) {
 		return errors.New("directionはlongまたはshortです")
 	}
+	if !r001.ValidVariant(r001.Variant(*variant)) {
+		return errors.New("variantはAまたはBです")
+	}
 	if command == "diagnose" {
-		return diagnose(ctx, out, diagnosticOptions{Input: *input, Reference: *reference, Symbol: *symbol, Environment: *environment, Label: *label, Captured: *captured, Direction: r001.Direction(*direction)})
+		return diagnose(ctx, out, diagnosticOptions{Input: *input, Reference: *reference, Symbol: *symbol, Environment: *environment, Label: *label, Captured: *captured, Direction: r001.Direction(*direction), Variant: r001.Variant(*variant)})
 	}
 	var dataset marketdata.Dataset
 	var raw []byte
 	var err error
-	if command == "demo" {
+	if command == "demo" || (command == "replay" && *input == "") {
 		if *input != "" {
 			return errors.New("demoは実ファイルを入力にしません")
 		}
@@ -128,6 +132,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return errors.New("分足JSONを読み取れません")
 		}
 	}
+	if command == "replay" {
+		return replay(ctx, out, *input, raw, dataset, r001.Direction(*direction), r001.Variant(*variant))
+	}
 	if command == "compare-bars" {
 		if *reference == "" {
 			return errors.New("-referenceに照合先の分足JSONを指定してください")
@@ -162,14 +169,14 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	inputName := filepath.Base(*input)
-	if command == "demo" {
+	if command == "demo" || (command == "replay" && *input == "") {
 		var saved string
 		if saved, raw, err = save("synthetic-bars", dataset); err != nil {
 			return err
 		}
 		inputName = filepath.Base(saved)
 	}
-	report, err := backtest.Run(ctx, dataset, r001.Direction(*direction))
+	report, err := backtest.RunVariant(ctx, dataset, r001.Direction(*direction), r001.Variant(*variant))
 	if err != nil {
 		return err
 	}
@@ -180,8 +187,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	settings := struct {
 		Rule, Model string
 		Direction   r001.Direction
+		Variant     r001.Variant
 		Costs       []int64
-	}{report.Rule, report.Model, report.Direction, []int64{0, 5, 10, 20}}
+	}{report.Rule, report.Model, report.Direction, report.Variant, []int64{0, 5, 10, 20}}
 	manifestPath, err := recordRun(command, inputName, raw, dataset.Source.SHA256, path, reportRaw, settings)
 	if err != nil {
 		return err
