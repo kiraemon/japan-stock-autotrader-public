@@ -35,10 +35,13 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | session-demo | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | session-demo | capital-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
+	if command == "capital-check" {
+		return runCapitalCheck(ctx, args[1:], out)
+	}
 	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" && command != "feed-demo" && command != "quote-demo" && command != "quote-check" && command != "history-feed-check" && command != "session-demo" {
 		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / feed-demo / quote-demo / quote-check / history-feed-check / session-demo / backtestを指定してください")
 	}

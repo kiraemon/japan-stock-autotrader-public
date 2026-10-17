@@ -31,7 +31,7 @@ func restrictedCore(name string) bool {
 		return true
 	}
 	switch feature(name) {
-	case "backtest", "buildbars", "comparebars", "papertrade", "replaysignals", "streamsignals", "streambars":
+	case "backtest", "buildbars", "comparebars", "papertrade", "replaysignals", "streamsignals", "streambars", "assesscapital":
 		return true
 	}
 	return false
