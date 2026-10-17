@@ -15,7 +15,7 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
 )
 
-const AlignedVersion = "aligned-history-capture-v0.1"
+const AlignedVersion = "aligned-history-capture-v0.2"
 const AlignedMinutes = 111
 const AlignedOffset = 2 * time.Second
 const AlignedDeadline = 10 * time.Second
@@ -71,23 +71,28 @@ type CaptureTiming struct {
 }
 
 type AlignedRound struct {
-	Version            string           `json:"version"`
-	Date               string           `json:"date_jst"`
-	Environment        kabu.Environment `json:"environment"`
-	Symbols            []string         `json:"requested_symbols"`
-	MinuteStart        time.Time        `json:"minute_start"`
-	ScheduledAt        time.Time        `json:"scheduled_at"`
-	Deadline           time.Time        `json:"raw_deadline"`
-	StartedAt          time.Time        `json:"actual_started_at"`
-	RawCompletedAt     time.Time        `json:"raw_completed_at"`
-	StartDelayNS       int64            `json:"start_delay_ns"`
-	RawCompleted       bool             `json:"raw_completed"`
-	RawOnTime          bool             `json:"raw_on_time"`
-	ErrorCode          string           `json:"error_code,omitempty"`
-	ConversionIncluded bool             `json:"conversion_included"`
-	ForwardTest        bool             `json:"forward_test"`
-	StrategyEligible   bool             `json:"strategy_eligible"`
-	Captures           []CaptureTiming  `json:"captures"`
+	Version               string           `json:"version"`
+	Date                  string           `json:"date_jst"`
+	Environment           kabu.Environment `json:"environment"`
+	Symbols               []string         `json:"requested_symbols"`
+	MinuteStart           time.Time        `json:"minute_start"`
+	ScheduledAt           time.Time        `json:"scheduled_at"`
+	Deadline              time.Time        `json:"raw_deadline"`
+	StartedAt             time.Time        `json:"actual_started_at"`
+	RawCompletedAt        time.Time        `json:"raw_completed_at"`
+	StartDelayNS          int64            `json:"start_delay_ns"`
+	RawCompleted          bool             `json:"raw_completed"`
+	RawOnTime             bool             `json:"raw_on_time"`
+	ErrorCode             string           `json:"error_code,omitempty"`
+	ConversionIncluded    bool             `json:"conversion_included"`
+	ProcessingStartedAt   *time.Time       `json:"processing_started_at,omitempty"`
+	ProcessingCompletedAt *time.Time       `json:"processing_completed_at,omitempty"`
+	ProcessingCompleted   bool             `json:"processing_completed"`
+	ProcessingOnTime      bool             `json:"processing_on_time"`
+	ProcessingReport      string           `json:"processing_report,omitempty"`
+	ForwardTest           bool             `json:"forward_test"`
+	StrategyEligible      bool             `json:"strategy_eligible"`
+	Captures              []CaptureTiming  `json:"captures"`
 }
 
 type AlignedOptions struct {
@@ -97,7 +102,10 @@ type AlignedOptions struct {
 	Directory   string
 	Clock       Clock
 	Observe     func(string) error
-	AfterRound  func(context.Context) error
+	// ProcessRound may convert/audit saved originals. It shares the raw deadline;
+	// its report must be saved before returning. It must never submit orders.
+	ProcessRound func(context.Context, AlignedRound) (string, error)
+	AfterRound   func(context.Context) error
 }
 
 // ValidateAligned runs before opening a connection or reading credentials.
@@ -159,7 +167,7 @@ func RunAligned(ctx context.Context, reader Reader, options AlignedOptions, out 
 			return err
 		}
 		now := clock.Now()
-		r := AlignedRound{Version: AlignedVersion, Date: options.Date, Environment: options.Environment, Symbols: append([]string{}, options.Symbols...), MinuteStart: minute, ScheduledAt: scheduled, Deadline: deadline, StartedAt: now, StartDelayNS: now.Sub(scheduled).Nanoseconds(), Captures: []CaptureTiming{}}
+		r := AlignedRound{Version: AlignedVersion, Date: options.Date, Environment: options.Environment, Symbols: append([]string{}, options.Symbols...), MinuteStart: minute, ScheduledAt: scheduled, Deadline: deadline, StartedAt: now, StartDelayNS: now.Sub(scheduled).Nanoseconds(), Captures: []CaptureTiming{}, ConversionIncluded: options.ProcessRound != nil}
 		var runErr error
 		switch {
 		case now.Before(lastClock) || now.Before(scheduled):
@@ -207,17 +215,53 @@ func RunAligned(ctx context.Context, reader Reader, options AlignedOptions, out 
 		}
 		r.RawCompleted = runErr == nil && len(r.Captures) == len(options.Symbols)
 		r.RawOnTime = r.RawCompleted && !r.RawCompletedAt.After(deadline)
+		if runErr == nil && options.ProcessRound != nil {
+			started := clock.Now()
+			r.ProcessingStartedAt = &started
+			switch {
+			case started.Before(r.RawCompletedAt):
+				r.ErrorCode = "observation_clock_reversed"
+				runErr = errors.New("履歴検査前に時計逆行を検出しました")
+			case !started.Before(deadline):
+				r.ErrorCode = "processing_deadline_exceeded"
+				runErr = errors.New("履歴検査の開始締切を超えました")
+			default:
+				processCtx, cancel := context.WithTimeout(ctx, deadline.Sub(started))
+				r.ProcessingReport, runErr = options.ProcessRound(processCtx, r)
+				completed := clock.Now()
+				r.ProcessingCompletedAt = &completed
+				r.ProcessingCompleted = runErr == nil
+				switch {
+				case completed.Before(started):
+					r.ErrorCode = "observation_clock_reversed"
+					runErr = errors.New("履歴検査中に時計逆行を検出しました")
+				case completed.After(deadline) || processCtx.Err() == context.DeadlineExceeded:
+					r.ErrorCode = "processing_deadline_exceeded"
+					runErr = errors.New("履歴検査・保存の締切を超えました")
+				case runErr != nil:
+					r.ErrorCode = "processing_failed"
+				case processCtx.Err() != nil:
+					r.ErrorCode = "processing_interrupted"
+					runErr = processCtx.Err()
+				}
+				r.ProcessingOnTime = runErr == nil
+				cancel()
+			}
+		}
 		path, err := saveAlignedRound(options.Directory, r)
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(out, "毎分履歴: 保存=%s / raw_complete=%t / raw_on_time=%t / reason=%s\n", path, r.RawCompleted, r.RawOnTime, r.ErrorCode); err != nil {
+		if _, err := fmt.Fprintf(out, "毎分履歴: 保存=%s / raw_complete=%t / raw_on_time=%t / processing_on_time=%t / reason=%s\n", path, r.RawCompleted, r.RawOnTime, r.ProcessingOnTime, r.ErrorCode); err != nil {
 			return errors.New("毎分履歴の結果を出力できません")
 		}
 		if runErr != nil {
 			return runErr
 		}
 		lastClock = r.RawCompletedAt
+		if r.ProcessingCompletedAt != nil {
+			lastClock = *r.ProcessingCompletedAt
+		}
 		if options.AfterRound != nil {
 			if err := options.AfterRound(ctx); err != nil {
 				return err

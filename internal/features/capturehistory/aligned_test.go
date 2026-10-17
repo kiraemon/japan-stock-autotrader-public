@@ -148,6 +148,65 @@ func TestAlignedClockMaintainsMinuteBoundariesAndArchiveProvenance(t *testing.T)
 	t.Log("synthetic=true / rounds=111 / history_archives=333 / normal_callbacks=111 / completion_drift=false")
 }
 
+func TestAlignedProcessingIncludesReportSaveInDeadline(t *testing.T) {
+	for _, kind := range []string{"on_time", "late", "failure", "clock_back", "cancel", "raw_failure"} {
+		t.Run(kind, func(t *testing.T) {
+			options, c, r := alignedOptions(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			processed, normal := 0, 0
+			options.AfterRound = func(context.Context) error { normal++; return nil }
+			options.ProcessRound = func(ctx context.Context, round AlignedRound) (string, error) {
+				processed++
+				if !round.RawCompleted || !round.RawOnTime || !round.ConversionIncluded {
+					t.Fatal("processed incomplete originals")
+				}
+				if remaining, ok := ctx.Deadline(); !ok || time.Until(remaining) > 6*time.Second {
+					t.Fatal("processing context budget not reduced")
+				}
+				switch kind {
+				case "late":
+					c.at = round.Deadline.Add(time.Nanosecond)
+				case "failure":
+					return "minute-audit-fixture.json", errors.New("synthetic processing failure")
+				case "clock_back":
+					c.at = c.at.Add(-time.Second)
+				case "cancel":
+					cancel()
+				default:
+					c.at = round.Deadline // Inclusive last-save boundary.
+				}
+				return "minute-audit-fixture.json", nil
+			}
+			if kind == "raw_failure" {
+				r.failAt = 2
+			}
+			err := RunAligned(ctx, r, options, &bytes.Buffer{})
+			if kind == "on_time" {
+				if err != nil || processed != 111 || normal != 111 {
+					t.Fatal("processing lifecycle", err, processed, normal)
+				}
+			} else if err == nil || normal != 0 || processed > 1 {
+				t.Fatal("processing failure retried", err, processed, normal)
+			}
+			for _, round := range rounds(t, options.Directory) {
+				if !round.ConversionIncluded {
+					t.Fatal("mode not recorded")
+				}
+				if kind == "on_time" && (!round.ProcessingOnTime || round.ProcessingCompletedAt == nil || !round.ProcessingCompletedAt.Equal(round.Deadline)) {
+					t.Fatal("save deadline lost")
+				}
+				if kind != "on_time" && round.ProcessingOnTime {
+					t.Fatal("failed processing promoted")
+				}
+			}
+			if kind == "raw_failure" && processed != 0 {
+				t.Fatal("processed failed raw round")
+			}
+		})
+	}
+}
+
 func TestAlignedFailuresNeverCatchUpOrStartNextSymbol(t *testing.T) {
 	for _, kind := range []string{"late_start", "slow_capture", "slow_save", "reader_failure", "clock_back", "normal_late", "normal_error", "observer_failure"} {
 		t.Run(kind, func(t *testing.T) {

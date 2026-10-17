@@ -57,6 +57,7 @@ func runWithSessionClock(ctx context.Context, args []string, input io.Reader, ou
 	historyList := fs.String("history-symbols", "", "開始時に一度だけ歩み値を保存する銘柄（最大10、例7203@1,8306@1）")
 	historyEvery := fs.Duration("history-every", 0, "歩み値保存完了から再取得までの最小間隔（0で起動時のみ、1m〜1h）")
 	minuteDate := fs.String("history-minute-date", "", "JST日付の09:00〜10:50足を終了+2秒に原保存。1〜3銘柄、111回、通常保存は各回の後")
+	minuteAudit := fs.Bool("history-minute-audit", false, "毎分履歴の原保存後に分足候補を検査し、検査保存まで同じ10秒締切に含める。戦略供給はしない")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -68,6 +69,9 @@ func runWithSessionClock(ctx context.Context, args []string, input io.Reader, ou
 	}
 	specified := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { specified[f.Name] = true })
+	if *minuteAudit && *minuteDate == "" {
+		return errors.New("history-minute-auditにはhistory-minute-dateが必要です")
+	}
 	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
 		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
 	}
@@ -151,6 +155,14 @@ func runWithSessionClock(ctx context.Context, args []string, input io.Reader, ou
 	if *passwordStdin == *onePassword {
 		return errors.New("-password-stdin または -onepassword のどちらか1つを指定してください")
 	}
+	var processRound func(context.Context, capturehistory.AlignedRound) (string, error)
+	if *minuteAudit {
+		var err error
+		processRound, err = newMinuteAudit(*minuteDate, *env, historySymbols, "data/history/"+*env, clock.Now)
+		if err != nil {
+			return err
+		}
+	}
 	client, err := openSession(kabu.Environment(*env))
 	if err != nil {
 		return err
@@ -225,14 +237,15 @@ func runWithSessionClock(ctx context.Context, args []string, input io.Reader, ou
 	}
 	password = ""
 	if *minuteDate != "" {
-		if _, err := fmt.Fprintf(output, "毎分履歴モード: version=%s / date=%s / rounds=%d / offset=%s / raw_deadline=%s / until=%s\nconversion_included=false / strategy_eligible=false\n", capturehistory.AlignedVersion, *minuteDate, capturehistory.AlignedMinutes, capturehistory.AlignedOffset, capturehistory.AlignedDeadline, until.Format(time.RFC3339)); err != nil {
+		if _, err := fmt.Fprintf(output, "毎分履歴モード: version=%s / date=%s / rounds=%d / offset=%s / raw_deadline=%s / until=%s\nconversion_included=%t / strategy_eligible=false\n", capturehistory.AlignedVersion, *minuteDate, capturehistory.AlignedMinutes, capturehistory.AlignedOffset, capturehistory.AlignedDeadline, until.Format(time.RFC3339), *minuteAudit); err != nil {
 			return errors.New("毎分履歴の開始結果を出力できません")
 		}
 		alignedCtx, cancel := context.WithDeadlineCause(workCtx, until, errAlignedEnd)
 		defer cancel()
 		err := capturehistory.RunAligned(alignedCtx, historyReader, capturehistory.AlignedOptions{
 			Date: *minuteDate, Environment: kabu.Environment(*env), Symbols: historySymbols, Directory: "data/history/" + *env, Clock: clock,
-			Observe: monitor.Phase,
+			Observe:      monitor.Phase,
+			ProcessRound: processRound,
 			AfterRound: func(ctx context.Context) error {
 				return collectquotes.Run(ctx, client, collectquotes.Options{Environment: kabu.Environment(*env), Symbols: symbols, Count: 1, Interval: time.Second, Directory: "data/" + *env, Observe: func(p collectquotes.Progress) error {
 					if p.Phase == "saved" {
