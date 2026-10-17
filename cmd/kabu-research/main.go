@@ -35,12 +35,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | session-demo | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
-	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" && command != "feed-demo" && command != "quote-demo" && command != "quote-check" && command != "history-feed-check" {
-		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / feed-demo / quote-demo / quote-check / history-feed-check / backtestを指定してください")
+	if command != "demo" && command != "build-bars" && command != "compare-bars" && command != "diagnose" && command != "backtest" && command != "replay" && command != "paper-demo" && command != "paper-replay" && command != "feed-demo" && command != "quote-demo" && command != "quote-check" && command != "history-feed-check" && command != "session-demo" {
+		return errors.New("demo / build-bars / compare-bars / diagnose / replay / paper-demo / paper-replay / feed-demo / quote-demo / quote-check / history-feed-check / session-demo / backtestを指定してください")
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -80,9 +80,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		return quoteCheck(ctx, out, *input, *symbol, *environment)
 	}
-	if command == "paper-demo" || command == "paper-replay" || command == "feed-demo" || command == "quote-demo" {
+	if command == "paper-demo" || command == "paper-replay" || command == "feed-demo" || command == "quote-demo" || command == "session-demo" {
 		if *input != "" || *reference != "" || *captured != "" || *symbol != "" {
-			return errors.New("paper-demo / paper-replay / feed-demo / quote-demoは組込の合成入力だけを使います")
+			return errors.New("paper-demo / paper-replay / feed-demo / quote-demo / session-demoは組込の合成入力だけを使います")
+		}
+		if command == "session-demo" {
+			return sessionDemo(ctx, out, r001.Direction(*direction), r001.Variant(*variant))
 		}
 		if command == "quote-demo" {
 			return quoteDemo(ctx, out, r001.Direction(*direction))
