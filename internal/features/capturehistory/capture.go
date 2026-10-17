@@ -4,6 +4,8 @@ package capturehistory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
@@ -63,6 +66,12 @@ type Archive struct {
 }
 
 func Capture(ctx context.Context, client Reader, environment kabu.Environment, symbols []string, directory string, out io.Writer) error {
+	return capture(ctx, client, environment, symbols, directory, out, time.Now, nil)
+}
+
+// capture is also used by the aligned owner. The clock and metadata observer
+// allow timing tests without a second API client or different archive schema.
+func capture(ctx context.Context, client Reader, environment kabu.Environment, symbols []string, directory string, out io.Writer, now func() time.Time, observe func(CaptureTiming) error) error {
 	if (environment != kabu.Test && environment != kabu.Production) || len(symbols) < 1 || len(symbols) > 10 {
 		return errors.New("履歴取得はtest/production、1〜10銘柄で指定してください")
 	}
@@ -80,18 +89,18 @@ func Capture(ctx context.Context, client Reader, environment kabu.Environment, s
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		a := Archive{Version: 1, Environment: environment, Symbol: symbol, StartedAt: time.Now().UTC()}
+		a := Archive{Version: 1, Environment: environment, Symbol: symbol, StartedAt: now().UTC()}
 		var err error
 		a.BoardBefore, err = client.Board(ctx, symbol)
 		if err == nil {
 			a.Trades, err = client.TimeAndSales(ctx, symbol)
-			now := time.Now().UTC()
-			a.HistoryReceivedAt = &now
+			received := now().UTC()
+			a.HistoryReceivedAt = &received
 		}
 		if err == nil {
 			a.BoardAfter, err = client.Board(ctx, symbol)
 		}
-		a.FinishedAt = time.Now().UTC()
+		a.FinishedAt = now().UTC()
 		if err != nil {
 			a.Error = "履歴または参照板の取得に失敗しました"
 		}
@@ -100,6 +109,19 @@ func Capture(ctx context.Context, client Reader, environment kabu.Environment, s
 		path, saveErr := save(directory, a)
 		if saveErr != nil {
 			return saveErr
+		}
+		if observe != nil {
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				return errors.New("履歴保存結果の情報を確認できません")
+			}
+			hash, hashErr := archiveDigest(path)
+			if hashErr != nil {
+				return hashErr
+			}
+			if observeErr := observe(CaptureTiming{Symbol: symbol, File: filepath.Base(path), SHA256: hash, StartedAt: a.StartedAt, ReceivedAt: a.HistoryReceivedAt, HTTPFinishedAt: a.FinishedAt, SavedAt: now().UTC(), Bytes: info.Size(), Complete: a.Complete}); observeErr != nil {
+				return observeErr
+			}
 		}
 		if _, writeErr := fmt.Fprintf(out, "履歴保存: %s / complete=%t / rows=%d / count_matches=%t / invalid_rows=%d\n", path, a.Complete, a.Analysis.Rows, a.Analysis.CountMatches, a.Analysis.InvalidRows); writeErr != nil {
 			return errors.New("履歴の保存結果を出力できません")
@@ -112,6 +134,20 @@ func Capture(ctx context.Context, client Reader, environment kabu.Environment, s
 		}
 	}
 	return nil
+}
+
+func archiveDigest(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", errors.New("履歴保存結果のハッシュを確認できません")
+	}
+	h := sha256.New()
+	_, readErr := io.Copy(h, f)
+	closeErr := f.Close()
+	if readErr != nil || closeErr != nil {
+		return "", errors.New("履歴保存結果のハッシュを確認できません")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Analyze only describes returned data. Matching the board's cumulative volume
@@ -219,8 +255,17 @@ func save(directory string, a Archive) (string, error) {
 		return "", errors.New("履歴JSONを閉じられません")
 	}
 	final := filepath.Join(directory, strings.TrimPrefix(strings.TrimSuffix(filepath.Base(path), ".tmp"), ".")+".json")
-	if os.Rename(path, final) != nil {
-		return "", errors.New("履歴JSONを確定できません")
+	if err := os.Rename(path, final); err != nil {
+		return "", fileFinalizeError("履歴JSONを確定できません", err)
 	}
 	return final, nil
+}
+
+// Retain the numeric cause without exposing a PathError's filenames or body.
+func fileFinalizeError(message string, err error) error {
+	var code syscall.Errno
+	if errors.As(err, &code) {
+		return fmt.Errorf("%s（OSコード=%d）", message, uint64(code))
+	}
+	return errors.New(message)
 }

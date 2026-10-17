@@ -41,6 +41,10 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer) 
 }
 
 func runWithSession(ctx context.Context, args []string, input io.Reader, output io.Writer, openSession func(kabu.Environment) (session, error)) (runErr error) {
+	return runWithSessionClock(ctx, args, input, output, openSession, capturehistory.WallClock{})
+}
+
+func runWithSessionClock(ctx context.Context, args []string, input io.Reader, output io.Writer, openSession func(kabu.Environment) (session, error), clock capturehistory.Clock) (runErr error) {
 	fs := flag.NewFlagSet("kabu-readonly", flag.ContinueOnError)
 	fs.SetOutput(output)
 	env := fs.String("environment", "test", "test (18081) または production (18080)")
@@ -52,6 +56,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	untilText := fs.String("until", "", "終了日時: RFC3339（例 2026-10-16T15:35:00+09:00）。countと早い方で終了")
 	historyList := fs.String("history-symbols", "", "開始時に一度だけ歩み値を保存する銘柄（最大10、例7203@1,8306@1）")
 	historyEvery := fs.Duration("history-every", 0, "歩み値保存完了から再取得までの最小間隔（0で起動時のみ、1m〜1h）")
+	minuteDate := fs.String("history-minute-date", "", "JST日付の09:00〜10:50足を終了+2秒に原保存。1〜3銘柄、111回、通常保存は各回の後")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -61,6 +66,8 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if fs.NArg() != 0 {
 		return errors.New("不要な引数があります。パスワードは引数に指定しないでください")
 	}
+	specified := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { specified[f.Name] = true })
 	if *count < 1 || *count > 10000 || *interval < time.Second || *interval > time.Hour {
 		return errors.New("countは1〜10000、intervalは1s〜1hで指定してください")
 	}
@@ -71,7 +78,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if *untilText != "" {
 		var err error
 		until, err = time.Parse(time.RFC3339, *untilText)
-		if err != nil || !until.After(time.Now()) || time.Until(until) > 24*time.Hour {
+		if err != nil || !until.After(clock.Now()) || until.Sub(clock.Now()) > 24*time.Hour {
 			return errors.New("untilは24時間以内の未来の日時をタイムゾーン付きRFC3339で指定してください")
 		}
 		countSpecified := false
@@ -83,6 +90,9 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		if !countSpecified {
 			*count = 10000
 		}
+	}
+	if *minuteDate != "" && (specified["count"] || specified["interval"] || specified["history-every"]) {
+		return errors.New("history-minute-dateはcount・interval・history-everyと同時指定できません")
 	}
 	var symbols []string
 	seen := map[string]bool{}
@@ -115,6 +125,27 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		}
 		if len(historySymbols) > 10 || len(seen) > 50 {
 			return errors.New("履歴は最大10銘柄、通常収集との合計は最大50銘柄です")
+		}
+	}
+	if *minuteDate != "" {
+		if err := capturehistory.ValidateAligned(*minuteDate, historySymbols, clock.Now()); err != nil {
+			return err
+		}
+		if len(symbols) != len(historySymbols) {
+			return errors.New("毎分履歴ではsymbolsとhistory-symbolsを同じ銘柄にしてください")
+		}
+		for _, symbol := range symbols {
+			found := false
+			for _, historySymbol := range historySymbols {
+				found = found || historySymbol == symbol
+			}
+			if !found {
+				return errors.New("毎分履歴ではsymbolsとhistory-symbolsを同じ銘柄にしてください")
+			}
+		}
+		*count = capturehistory.AlignedMinutes
+		if until.IsZero() || until.After(capturehistory.AlignedEnd(*minuteDate)) {
+			until = capturehistory.AlignedEnd(*minuteDate)
 		}
 	}
 	if *passwordStdin == *onePassword {
@@ -178,8 +209,13 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 	if err := workCtx.Err(); err != nil {
 		return err
 	}
-	if !until.IsZero() && !until.After(time.Now()) {
+	if !until.IsZero() && !until.After(clock.Now()) {
 		return errors.New("終了日時を過ぎたため認証を開始しません")
+	}
+	if *minuteDate != "" {
+		if err := capturehistory.ValidateAligned(*minuteDate, historySymbols, clock.Now()); err != nil {
+			return err
+		}
 	}
 	if err := monitor.Phase("authenticating"); err != nil {
 		return err
@@ -188,6 +224,32 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 		return err
 	}
 	password = ""
+	if *minuteDate != "" {
+		if _, err := fmt.Fprintf(output, "毎分履歴モード: version=%s / date=%s / rounds=%d / offset=%s / raw_deadline=%s / until=%s\nconversion_included=false / strategy_eligible=false\n", capturehistory.AlignedVersion, *minuteDate, capturehistory.AlignedMinutes, capturehistory.AlignedOffset, capturehistory.AlignedDeadline, until.Format(time.RFC3339)); err != nil {
+			return errors.New("毎分履歴の開始結果を出力できません")
+		}
+		alignedCtx, cancel := context.WithDeadlineCause(workCtx, until, errAlignedEnd)
+		defer cancel()
+		err := capturehistory.RunAligned(alignedCtx, historyReader, capturehistory.AlignedOptions{
+			Date: *minuteDate, Environment: kabu.Environment(*env), Symbols: historySymbols, Directory: "data/history/" + *env, Clock: clock,
+			Observe: monitor.Phase,
+			AfterRound: func(ctx context.Context) error {
+				return collectquotes.Run(ctx, client, collectquotes.Options{Environment: kabu.Environment(*env), Symbols: symbols, Count: 1, Interval: time.Second, Directory: "data/" + *env, Observe: func(p collectquotes.Progress) error {
+					if p.Phase == "saved" {
+						return monitor.Saved(p.Complete)
+					}
+					return monitor.Phase(p.Phase)
+				}}, output)
+			},
+		}, output)
+		if errors.Is(err, context.DeadlineExceeded) && context.Cause(alignedCtx) == errAlignedEnd && workCtx.Err() == nil {
+			if _, writeErr := fmt.Fprintln(output, "終了日時に到達したため毎分履歴収集を終了しました"); writeErr != nil {
+				return errors.New("終了結果を出力できません")
+			}
+			return collectquotes.ErrScheduledEnd
+		}
+		return err
+	}
 	if len(historySymbols) > 0 {
 		if err := monitor.Phase("collecting"); err != nil {
 			return err
@@ -233,6 +295,7 @@ func runWithSession(ctx context.Context, args []string, input io.Reader, output 
 // Input can block while the user is away. Cancellation must still release the
 // startup guard and finish status; a blocked input goroutine ends with the process.
 var errInputClosed = errors.New("APIパスワードの入力を中断しました")
+var errAlignedEnd = errors.New("aligned capture scheduled end")
 
 func readPassword(ctx context.Context, input io.Reader) (string, error) {
 	if ctx.Err() != nil {
