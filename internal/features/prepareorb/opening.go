@@ -154,7 +154,7 @@ func CheckWithPolicy(ctx context.Context, d marketdata.Dataset, date string, pre
 		return r, errors.New("寄り付き入力方針を確認してください")
 	}
 	if policy != "" {
-		if d.Origin != "observed" || d.Environment != "production" || d.Source.Format != "jquants-bulk-minute-v0.1" || d.Source.Label != "start" {
+		if d.Origin != "observed" || d.Environment != "production" || (d.Source.Format != "jquants-bulk-minute-v0.1" && d.Source.Format != marketdata.JQuantsJoinedFormat) || d.Source.Label != "start" {
 			return r, errors.New("無約定を仮定する入力は正規化済みJ-Quants一括分足に限定しています")
 		}
 		r.Version, r.OpeningPolicy, r.SourceContractAssumed = PolicyVersion, policy, true

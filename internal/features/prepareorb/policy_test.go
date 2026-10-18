@@ -103,3 +103,20 @@ func TestPrefixPolicyRejectsOtherProvidersOriginsEnvironmentsAndUnknownPolicies(
 		t.Fatal("unknown policy admitted")
 	}
 }
+
+func TestJoinedBulkPolicyKeepsOpeningResultAndQuality(t *testing.T) {
+	d, date, previous := providerFixture()
+	original, err := CheckWithPolicy(context.Background(), d, date, previous, JQuantsPrefixPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Source.Format = marketdata.JQuantsJoinedFormat
+	joined, err := CheckWithPolicy(context.Background(), d, date, previous, JQuantsPrefixPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original.Source.Format = marketdata.JQuantsJoinedFormat
+	if !reflect.DeepEqual(original, joined) || joined.QualityPromoted || joined.TradingEligible {
+		t.Fatal("joining changed calculation or promoted quality")
+	}
+}

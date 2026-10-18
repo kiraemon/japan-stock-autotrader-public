@@ -150,25 +150,7 @@ func universeRule(raw []byte) (string, string, error) {
 // A report can reference the same immutable catalog on repeated runs without
 // putting a random output filename into its reproducible content.
 func saveUniverseCatalog(value universeDailyCatalog) (string, []byte, error) {
-	path, raw, err := save("daily-catalog", value)
-	if err != nil {
-		return "", nil, err
-	}
-	stable := filepath.Join(filepath.Dir(path), "daily-catalog-"+hash(raw)+".json")
-	if _, err := os.Lstat(stable); err == nil {
-		existing, err := readInput(stable)
-		if err != nil || hash(existing) != hash(raw) {
-			return "", nil, errors.New("日足カタログの保存済みhashを確認してください")
-		}
-		if os.Remove(path) != nil {
-			return "", nil, errors.New("重複した日足出力を整理できません")
-		}
-	} else if !os.IsNotExist(err) {
-		return "", nil, errors.New("日足出力先を確認できません")
-	} else if os.Rename(path, stable) != nil {
-		return "", nil, errors.New("日足カタログを確定できません")
-	}
-	return stable, raw, nil
+	return saveContentAddressed("daily-catalog", value)
 }
 
 func runUniverse(ctx context.Context, args []string, out io.Writer) error {

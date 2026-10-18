@@ -35,10 +35,13 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("研究処理を中断しました")
 	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | import-jquants-bulk | select-universe | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | session-demo | capital-check | cohort-check | orb-input-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
+		_, err := fmt.Fprintln(out, "kabu-research demo | build-bars | import-jquants-bulk | select-universe | prepare-s01 | compare-bars | diagnose | replay | paper-demo | paper-replay | feed-demo | quote-demo | quote-check | history-feed-check | session-demo | capital-check | cohort-check | orb-input-check | backtest（オフライン専用・発注機能なし）。各コマンドに-hで説明。")
 		return err
 	}
 	command := args[0]
+	if command == "prepare-s01" {
+		return runS01Inputs(ctx, args[1:], out)
+	}
 	if command == "select-universe" {
 		return runUniverse(ctx, args[1:], out)
 	}

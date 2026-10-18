@@ -10,6 +10,7 @@ import (
 )
 
 const PriceScale int64 = 10000
+const JQuantsJoinedFormat = "jquants-bulk-minute-joined-v0.1"
 const MaxPrice int64 = 1_000_000_000_000
 
 var JST = time.FixedZone("JST", 9*3600)
