@@ -40,7 +40,7 @@ func importJQuantsBulk(ctx context.Context, args []string, out io.Writer) error 
 	var r jquantsbulk.Report
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
-	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || r.Version != jquantsbulk.Version || !r.Complete || r.ListOnly || len(r.Files) != 1 || r.Started.IsZero() || r.Captured.Before(r.Started) || jquantsbulk.ValidateMonth(r.Month) != nil {
+	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || r.Version != jquantsbulk.Version || (r.Dataset != "" && r.Dataset != jquantsbulk.Minute) || !r.Complete || r.ListOnly || r.CalendarOnly || len(r.Files) != 1 || r.Started.IsZero() || r.Captured.Before(r.Started) || jquantsbulk.ValidateMonth(r.Month) != nil {
 		return errors.New("完了した月次bulkファイル1件の記録を確認してください")
 	}
 	file := r.Files[0]

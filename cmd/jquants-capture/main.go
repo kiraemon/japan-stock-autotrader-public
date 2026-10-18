@@ -17,6 +17,7 @@ import (
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
 	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantscli"
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsrate"
 )
@@ -38,6 +39,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	from := fs.String("from", "", "取得開始日YYYY-MM-DD（必須）")
 	to := fs.String("to", "", "取得終了日YYYY-MM-DD（必須、31日以内）")
 	bulkMonth := fs.String("bulk-month", "", "YYYY-MMの分足一括gzip取得（from/to/codesとの併用不可）")
+	bulkDataset := fs.String("bulk-dataset", "minute", "一括取得対象: minute/daily/master（bulk-monthのみ）")
 	listOnly := fs.Bool("list-only", false, "bulk-monthの一覧と容量だけ確認")
 	calendarOnly := fs.Bool("calendar-only", false, "bulk-monthの公式取引カレンダーだけ取得")
 	if err := fs.Parse(args); err != nil {
@@ -50,18 +52,28 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("不要な引数があります")
 	}
 	if *bulkMonth != "" {
+		dataset, err := jquantsbulk.ValidateDataset(*bulkDataset)
+		if err != nil {
+			return err
+		}
 		conflict := *from != "" || *to != ""
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name == "codes" {
 				conflict = true
 			}
 		})
-		if conflict || (*calendarOnly && *listOnly) {
+		if conflict || (*calendarOnly && (*listOnly || dataset != jquantsbulk.Minute)) {
 			return errors.New("bulk-monthはfrom/to/codesと併用できません")
 		}
-		return runBulk(ctx, *root, *bulkMonth, *listOnly, *calendarOnly, out)
+		return runBulk(ctx, *root, *bulkMonth, dataset, *listOnly, *calendarOnly, out)
 	}
-	if *listOnly || *calendarOnly {
+	datasetFlag := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "bulk-dataset" {
+			datasetFlag = true
+		}
+	})
+	if *listOnly || *calendarOnly || datasetFlag {
 		return errors.New("list-onlyはbulk-monthにだけ指定できます")
 	}
 	jobs := []jquantscli.Job{}

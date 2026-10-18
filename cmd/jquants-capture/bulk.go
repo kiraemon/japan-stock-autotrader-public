@@ -16,7 +16,13 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsrate"
 )
 
-func runBulk(ctx context.Context, root, month string, listOnly, calendarOnly bool, out io.Writer) error {
+func runBulk(ctx context.Context, root, month string, dataset jquantsbulk.Dataset, listOnly, calendarOnly bool, out io.Writer) error {
+	if _, err := jquantsbulk.ValidateDataset(string(dataset)); err != nil {
+		return err
+	}
+	if calendarOnly && dataset != jquantsbulk.Minute {
+		return errors.New("カレンダー取得はminuteだけに指定できます")
+	}
 	if err := jquantsbulk.ValidateMonth(month); err != nil {
 		return err
 	}
@@ -46,7 +52,10 @@ func runBulk(ctx context.Context, root, month string, listOnly, calendarOnly boo
 		return err
 	}
 	directory := filepath.Join(absolute, "data", "jquants", "bulk")
-	r, captureErr := jquantsbulk.Capture(ctx, key, month, directory, listOnly, calendarOnly)
+	if dataset != jquantsbulk.Minute {
+		directory = filepath.Join(directory, string(dataset))
+	}
+	r, captureErr := jquantsbulk.CaptureDataset(ctx, key, month, directory, dataset, listOnly, calendarOnly)
 	rateLimited = r.LastStatus == 429
 	key = ""
 	if os.MkdirAll(directory, 0700) != nil {
@@ -77,6 +86,9 @@ func runBulk(ctx context.Context, root, month string, listOnly, calendarOnly boo
 		total += f.Size
 	}
 	_, err = fmt.Fprintf(out, "J-Quants bulk: month=%s / complete=%t / list_only=%t / calendar_only=%t / files=%d / compressed_bytes=%d / api_requests=%d / last_status=%d\n保存: %s\n", month, r.Complete, listOnly, calendarOnly, len(r.Files), total, r.Requests, r.LastStatus, final)
+	if dataset != jquantsbulk.Minute && err == nil {
+		_, err = fmt.Fprintf(out, "dataset=%s\n", dataset)
+	}
 	if captureErr != nil {
 		return captureErr
 	}

@@ -44,6 +44,14 @@ func TestBulkImportChecksOriginalBytesAndGzipIntegrity(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatal("missing normalized data")
 	}
+	for _, dataset := range []jquantsbulk.Dataset{jquantsbulk.Daily, jquantsbulk.Master} {
+		r.Dataset = dataset
+		write()
+		if err := run(context.Background(), []string{"import-jquants-bulk", "-input", "capture.json", "-symbols", "0000@1"}, &bytes.Buffer{}); err == nil {
+			t.Fatal("non-minute dataset admitted by minute importer")
+		}
+	}
+	r.Dataset = ""
 	r.Files[0].SHA256 = strings.Repeat("0", 64)
 	write()
 	if err := run(context.Background(), []string{"import-jquants-bulk", "-input", "capture.json", "-symbols", "0000@1"}, &bytes.Buffer{}); err == nil {

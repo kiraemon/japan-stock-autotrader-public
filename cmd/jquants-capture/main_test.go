@@ -18,3 +18,16 @@ func TestCaptureHelpAndInvalidRangeDoNotResolveSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestBulkDatasetValidationPrecedesCredentialResolution(t *testing.T) {
+	for _, args := range [][]string{
+		{"-bulk-month", "2026-01", "-bulk-dataset", "../master"},
+		{"-bulk-dataset", "daily", "-from", "2026-01-01", "-to", "2026-01-02"},
+		{"-bulk-month", "2026-01", "-bulk-dataset", "master", "-calendar-only"},
+		{"-bulk-month", "2026-01", "-bulk-dataset", "daily", "-codes", "7203"},
+	} {
+		if err := run(context.Background(), args, &bytes.Buffer{}); err == nil || strings.Contains(err.Error(), "1Password") {
+			t.Fatal("invalid dataset reached credentials", err)
+		}
+	}
+}

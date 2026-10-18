@@ -3,3 +3,4 @@
 go.mod text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
+examples/research/s01-universe.plan.json text eol=lf

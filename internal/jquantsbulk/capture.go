@@ -41,6 +41,7 @@ type File struct {
 
 type Report struct {
 	Version      string          `json:"version"`
+	Dataset      Dataset         `json:"dataset,omitempty"`
 	Month        string          `json:"month"`
 	Started      time.Time       `json:"started_at"`
 	Captured     time.Time       `json:"captured_at"`
@@ -64,6 +65,7 @@ func ValidateMonth(month string) error {
 type client struct {
 	http       *http.Client
 	key, month string
+	dataset    Dataset
 	last       time.Time
 	interval   time.Duration
 	report     *Report
@@ -73,10 +75,10 @@ type client struct {
 func (c *client) metadata(ctx context.Context, path string, q url.Values) ([]byte, error) {
 	allowed := false
 	if path == "/v2/bulk/list" && len(q) == 3 {
-		allowed = q.Get("endpoint") == Endpoint && q.Get("from") == c.month && q.Get("to") == c.month
+		allowed = c.dataset.valid() && q.Get("endpoint") == c.dataset.endpoint() && q.Get("from") == c.month && q.Get("to") == c.month
 	} else if path == "/v2/bulk/get" && len(q) == 1 {
 		allowed = c.keys[q.Get("key")]
-	} else if path == "/v2/markets/calendar" && len(q) == 2 {
+	} else if path == "/v2/markets/calendar" && len(q) == 2 && (c.dataset == "" || c.dataset == Minute) {
 		first, _ := time.Parse("2006-01", c.month)
 		allowed = q.Get("from") == first.Format("2006-01-02") && q.Get("to") == first.AddDate(0, 1, -1).Format("2006-01-02")
 	}
@@ -123,7 +125,11 @@ func (c *client) metadata(ctx context.Context, path string, q url.Values) ([]byt
 }
 
 func validKey(key, month string) bool {
-	return strings.HasPrefix(key, "equities/bars/minute/") && strings.HasSuffix(key, ".csv.gz") &&
+	return validDatasetKey(key, month, Minute)
+}
+
+func validDatasetKey(key, month string, dataset Dataset) bool {
+	return dataset.valid() && strings.HasPrefix(key, strings.TrimPrefix(dataset.endpoint(), "/")+"/") && strings.HasSuffix(key, ".csv.gz") &&
 		!strings.Contains(key, "..") && !strings.ContainsAny(key, "\\\x00\r\n?#") &&
 		(strings.Contains(key, strings.ReplaceAll(month, "-", "")) || strings.Contains(key, month))
 }
@@ -211,7 +217,17 @@ func (c *client) download(ctx context.Context, dir string, file *File) error {
 // Capture is sequential and must be called under the shared J-Quants gate.
 // Listing precedes all downloads; no retry, login, upload, or purchase occurs.
 func Capture(ctx context.Context, key, month, directory string, listOnly, calendarOnly bool) (Report, error) {
+	return CaptureDataset(ctx, key, month, directory, Minute, listOnly, calendarOnly)
+}
+
+func CaptureDataset(ctx context.Context, key, month, directory string, dataset Dataset, listOnly, calendarOnly bool) (Report, error) {
 	r := Report{Version: Version, Month: month, Started: time.Now().UTC(), ListOnly: listOnly, CalendarOnly: calendarOnly, Files: []File{}}
+	if !dataset.valid() || (calendarOnly && dataset != Minute && dataset != "") || (listOnly && calendarOnly) {
+		return r, errors.New("bulk datasetとカレンダー指定を確認してください")
+	}
+	if dataset != Minute {
+		r.Dataset = dataset
+	}
 	if err := ValidateMonth(month); err != nil {
 		return r, err
 	}
@@ -222,7 +238,7 @@ func Capture(ctx context.Context, key, month, directory string, listOnly, calend
 	transport.Proxy = nil
 	transport.DisableCompression = true
 	defer transport.CloseIdleConnections()
-	c := &client{key: key, month: month, interval: 1250 * time.Millisecond, report: &r, keys: map[string]bool{}, http: &http.Client{Transport: transport, Timeout: 4 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
+	c := &client{key: key, month: month, dataset: dataset, interval: 1250 * time.Millisecond, report: &r, keys: map[string]bool{}, http: &http.Client{Transport: transport, Timeout: 4 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
 	var err error
 	if calendarOnly {
 		first, _ := time.Parse("2006-01", month)
@@ -239,7 +255,7 @@ func Capture(ctx context.Context, key, month, directory string, listOnly, calend
 }
 
 func (c *client) capture(ctx context.Context, directory string, listOnly bool) error {
-	body, err := c.metadata(ctx, "/v2/bulk/list", url.Values{"endpoint": {Endpoint}, "from": {c.month}, "to": {c.month}})
+	body, err := c.metadata(ctx, "/v2/bulk/list", url.Values{"endpoint": {c.dataset.endpoint()}, "from": {c.month}, "to": {c.month}})
 	if err != nil {
 		return err
 	}
@@ -259,8 +275,8 @@ func (c *client) capture(ctx context.Context, directory string, listOnly bool) e
 	for _, f := range listing.Data {
 		size, sizeOK := sizeBytes(f.Size)
 		modified, err := time.Parse(time.RFC3339Nano, f.Modified)
-		if !validKey(f.Key, c.month) || c.keys[f.Key] || !sizeOK || size <= 0 || size > maxFileBytes || err != nil || modified.IsZero() {
-			return fmt.Errorf("bulk一覧を確認してください: key_valid=%t / compressed_bytes=%d / integer_size=%t / modified_valid=%t", validKey(f.Key, c.month), size, sizeOK, err == nil && !modified.IsZero())
+		if !validDatasetKey(f.Key, c.month, c.dataset) || c.keys[f.Key] || !sizeOK || size <= 0 || size > maxFileBytes || err != nil || modified.IsZero() {
+			return fmt.Errorf("bulk一覧を確認してください: key_valid=%t / compressed_bytes=%d / integer_size=%t / modified_valid=%t", validDatasetKey(f.Key, c.month, c.dataset), size, sizeOK, err == nil && !modified.IsZero())
 		}
 		c.keys[f.Key] = true
 		total += size
