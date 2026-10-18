@@ -13,6 +13,19 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
 )
 
+type jqRow struct {
+	Date      string      `json:"Date"`
+	Time      string      `json:"Time"`
+	Code      string      `json:"Code"`
+	Open      json.Number `json:"O"`
+	High      json.Number `json:"H"`
+	Low       json.Number `json:"L"`
+	Close     json.Number `json:"C"`
+	Volume    json.Number `json:"Vo"`
+	Turnover  json.Number `json:"Va"`
+	SourceRow int         `json:"-"`
+}
+
 // FromJQuantsCLI converts the bounded capture archive, never a kabu CSV alias.
 // The original archive preserves Va; this OHLCV contract does not yet use it.
 func FromJQuantsCLI(ctx context.Context, raw []byte, symbol string) (marketdata.Dataset, error) {
@@ -28,17 +41,7 @@ func FromJQuantsCLI(ctx context.Context, raw []byte, symbol string) (marketdata.
 			To       string    `json:"to"`
 			Started  time.Time `json:"started_at"`
 			Captured time.Time `json:"captured_at"`
-			Data     []struct {
-				Date     string      `json:"Date"`
-				Time     string      `json:"Time"`
-				Code     string      `json:"Code"`
-				Open     json.Number `json:"O"`
-				High     json.Number `json:"H"`
-				Low      json.Number `json:"L"`
-				Close    json.Number `json:"C"`
-				Volume   json.Number `json:"Vo"`
-				Turnover json.Number `json:"Va"`
-			} `json:"data"`
+			Data     []jqRow   `json:"data"`
 		} `json:"results"`
 	}
 	decode := json.NewDecoder(bytes.NewReader(raw))
@@ -66,9 +69,13 @@ func FromJQuantsCLI(ctx context.Context, raw []byte, symbol string) (marketdata.
 	}
 	d := dataset(raw, symbol, "production", "jquants-cli-minute-v1.6.0", result.Captured)
 	d.Converter = Version + "/jquants-v0.1"
+	return jquantsDataset(ctx, d, result.Code, result.From, result.To, result.Data)
+}
+
+func jquantsDataset(ctx context.Context, d marketdata.Dataset, code, from, to string, rows []jqRow) (marketdata.Dataset, error) {
 	days := map[string]*marketdata.Day{}
 	seen := map[time.Time]bool{}
-	for index, row := range result.Data {
+	for index, row := range rows {
 		if ctx.Err() != nil {
 			return d, errors.New("J-Quants分足変換を中断しました")
 		}
@@ -77,11 +84,15 @@ func FromJQuantsCLI(ctx context.Context, raw []byte, symbol string) (marketdata.
 			clock += ":00"
 		}
 		at, err := time.ParseInLocation("2006-01-02 15:04:05", row.Date+" "+clock, marketdata.JST)
-		if err != nil || !at.Equal(at.Truncate(time.Minute)) || at.After(result.Captured) || row.Date < result.From || row.Date > result.To || (row.Code != result.Code && row.Code != result.Code+"0") || seen[at] {
+		if err != nil || !at.Equal(at.Truncate(time.Minute)) || at.After(d.Source.ReceivedAt) || row.Date < from || row.Date > to || (row.Code != code && row.Code != code+"0") || seen[at] {
 			return d, errors.New("J-Quantsの銘柄・日時・範囲・重複を確認してください")
 		}
 		seen[at] = true
-		b := marketdata.Bar{Start: at, FirstRow: index + 1, LastRow: index + 1, Issues: []string{}}
+		sourceRow := row.SourceRow
+		if sourceRow == 0 {
+			sourceRow = index + 1
+		}
+		b := marketdata.Bar{Start: at, FirstRow: sourceRow, LastRow: sourceRow, Issues: []string{}}
 		for _, p := range []struct {
 			value  json.Number
 			target *int64
@@ -109,10 +120,10 @@ func FromJQuantsCLI(ctx context.Context, raw []byte, symbol string) (marketdata.
 			if b.Open != b.Close || b.High != b.Close || b.Low != b.Close {
 				return d, errors.New("J-Quantsの板寄せ境界足を確認してください")
 			}
-			days[row.Date].Events = append(days[row.Date].Events, marketdata.Event{Time: at, Price: b.Close, Volume: b.Volume, Row: index + 1})
+			days[row.Date].Events = append(days[row.Date].Events, marketdata.Event{Time: at, Price: b.Close, Volume: b.Volume, Row: sourceRow})
 			continue
 		}
-		if at.Add(time.Minute).After(result.Captured) {
+		if at.Add(time.Minute).After(d.Source.ReceivedAt) {
 			b.Issues = append(b.Issues, "unfinished_minute")
 		}
 		days[row.Date].Bars = append(days[row.Date].Bars, b)

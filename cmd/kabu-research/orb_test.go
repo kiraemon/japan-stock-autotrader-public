@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
 )
 
 func writeORBFixture(t *testing.T) orbManifest {
@@ -37,6 +40,60 @@ func writeORBFixture(t *testing.T) orbManifest {
 		t.Fatal("manifest write")
 	}
 	return m
+}
+
+func TestORBV2VerifiesCalendarWindowAndKeepsQualityPending(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := writeORBFixture(t)
+	csvRaw, _ := os.ReadFile("inputs/chart.csv")
+	at := time.Date(2026, 6, 23, 0, 0, 0, 0, time.UTC)
+	bars, err := buildbars.FromCSV(context.Background(), csvRaw, "0000@1", "production", "start", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bars.Source.Format = "jquants-bulk-minute-v0.1" // Synthetic normalized-source fixture.
+	barRaw, _ := json.Marshal(bars)
+	_ = os.WriteFile("inputs/bars.json", barRaw, 0600)
+	rows := []map[string]string{}
+	for day := 1; day <= 30; day++ {
+		d := time.Date(2026, 6, day, 0, 0, 0, 0, time.UTC)
+		division := "1"
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			division = "0"
+		}
+		rows = append(rows, map[string]string{"Date": d.Format("2006-01-02"), "HolDiv": division})
+	}
+	calendar, _ := json.Marshal(map[string]any{"data": rows})
+	capture := jquantsbulk.Report{Version: jquantsbulk.Version, Month: "2026-06", Started: at, Captured: at.Add(time.Second), Complete: true, CalendarOnly: true, Calendar: calendar}
+	calendarRaw, _ := json.Marshal(capture)
+	_ = os.WriteFile("inputs/calendar.json", calendarRaw, 0600)
+	m.Version = 2
+	m.Environment = "production"
+	m.CSVLabel = ""
+	m.CalendarFile = "calendar.json"
+	m.Sources = []orbSource{{Symbol: "0000@1", BarsJSON: "bars.json"}}
+	write := func() { raw, _ := json.Marshal(m); _ = os.WriteFile("inputs/orb.json", raw, 0600) }
+	write()
+	for i := 0; i < 2; i++ {
+		if err := run(context.Background(), []string{"orb-input-check", "-input", "inputs/orb.json"}, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, _ := filepath.Glob("data/research/orb-input-*.json")
+	a, _ := os.ReadFile(files[0])
+	b, _ := os.ReadFile(files[1])
+	if !bytes.Equal(a, b) {
+		t.Fatal("normalized ORB result is not reproducible")
+	}
+	var report orbReport
+	if json.Unmarshal(a, &report) != nil || !report.CalendarAutomaticallyVerified || report.CalendarSHA256 != hash(calendarRaw) || report.Sources[0].InputSHA256 != hash(barRaw) || report.Inputs[0].RelativeVolume == nil || *report.Inputs[0].RelativeVolume != "1" || report.Inputs[0].TradingEligible {
+		t.Fatal("calendar/provenance/quality changed")
+	}
+	m.Previous[0] = "2026-06-01"
+	write()
+	if err := run(context.Background(), []string{"orb-input-check", "-input", "inputs/orb.json"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("caller replaced an official previous session")
+	}
 }
 
 func TestORBInputProvenanceReproducibilityAndSafeOutput(t *testing.T) {

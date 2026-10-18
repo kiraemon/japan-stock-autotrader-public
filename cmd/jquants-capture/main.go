@@ -18,6 +18,7 @@ import (
 	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
 	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantscli"
+	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsrate"
 )
 
 func main() {
@@ -36,6 +37,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	codes := fs.String("codes", "7203,8306,6501", "1〜3銘柄の4桁コード")
 	from := fs.String("from", "", "取得開始日YYYY-MM-DD（必須）")
 	to := fs.String("to", "", "取得終了日YYYY-MM-DD（必須、31日以内）")
+	bulkMonth := fs.String("bulk-month", "", "YYYY-MMの分足一括gzip取得（from/to/codesとの併用不可）")
+	listOnly := fs.Bool("list-only", false, "bulk-monthの一覧と容量だけ確認")
+	calendarOnly := fs.Bool("calendar-only", false, "bulk-monthの公式取引カレンダーだけ取得")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -44,6 +48,21 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if fs.NArg() != 0 {
 		return errors.New("不要な引数があります")
+	}
+	if *bulkMonth != "" {
+		conflict := *from != "" || *to != ""
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "codes" {
+				conflict = true
+			}
+		})
+		if conflict || (*calendarOnly && *listOnly) {
+			return errors.New("bulk-monthはfrom/to/codesと併用できません")
+		}
+		return runBulk(ctx, *root, *bulkMonth, *listOnly, *calendarOnly, out)
+	}
+	if *listOnly || *calendarOnly {
+		return errors.New("list-onlyはbulk-monthにだけ指定できます")
 	}
 	jobs := []jquantscli.Job{}
 	for _, code := range strings.Split(*codes, ",") {
@@ -73,11 +92,22 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	defer gate.Close()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
+	lease, err := jquantsrate.Start(ctx, filepath.Join(absolute, ".cache", "jquants-rate.json"), 3*time.Minute)
+	if err != nil {
+		return err
+	}
+	rateLimited := false
+	defer func() {
+		if lease.Finish(rateLimited) != nil {
+			fmt.Fprintln(out, "送信間隔記録の更新失敗。次回起動は予約時刻まで停止します")
+		}
+	}()
 	key, err := credentials.JQuants(ctx, absolute)
 	if err != nil {
 		return err
 	}
 	results, stats, captureErr := jquantscli.Capture(ctx, executable, key, jobs)
+	rateLimited = stats.LastStatus == 429
 	key = ""
 	directory := filepath.Join(absolute, "data", "jquants", "captures")
 	if err := os.MkdirAll(directory, 0700); err != nil {
