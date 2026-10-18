@@ -23,34 +23,38 @@ type Range struct {
 }
 
 type Opening struct {
-	Date           string   `json:"date_jst"`
-	MissingMinutes []string `json:"missing_minutes_jst"`
-	Problems       []string `json:"problems"`
-	SourceIssues   []string `json:"source_day_issues"`
-	Volume         *string  `json:"volume_shares,omitempty"`
-	Range          *Range   `json:"range_scaled,omitempty"`
+	Date                  string   `json:"date_jst"`
+	MissingMinutes        []string `json:"missing_minutes_jst"`
+	Problems              []string `json:"problems"`
+	SourceIssues          []string `json:"source_day_issues"`
+	Volume                *string  `json:"volume_shares,omitempty"`
+	Range                 *Range   `json:"range_scaled,omitempty"`
+	MissingInterpretation string   `json:"missing_interpretation,omitempty"`
 }
 
 type Report struct {
-	Version              string            `json:"version"`
-	Scope                string            `json:"scope"`
-	Symbol               string            `json:"symbol"`
-	Origin               string            `json:"origin"`
-	Source               marketdata.Source `json:"source"`
-	PriceScale           int64             `json:"price_scale"`
-	AsOf                 time.Time         `json:"as_of_jst"`
-	Target               Opening           `json:"target"`
-	Previous             []Opening         `json:"previous_sessions"`
-	CompletePrevious     int               `json:"complete_previous_openings"`
-	MissingPrevious      []string          `json:"unavailable_previous_dates"`
-	CalculationAvailable bool              `json:"calculation_available"`
-	PreviousMean         *string           `json:"previous_mean_volume_exact,omitempty"`
-	RelativeVolume       *string           `json:"relative_volume_exact,omitempty"`
-	AtLeastOne           *bool             `json:"relative_volume_at_least_one,omitempty"`
-	Problems             []string          `json:"problems"`
-	QualityPromoted      bool              `json:"quality_promoted"`
-	TradingEligible      bool              `json:"trading_eligible"`
-	StrategyAdopted      bool              `json:"strategy_adopted"`
+	Version               string            `json:"version"`
+	Scope                 string            `json:"scope"`
+	Symbol                string            `json:"symbol"`
+	Origin                string            `json:"origin"`
+	Source                marketdata.Source `json:"source"`
+	PriceScale            int64             `json:"price_scale"`
+	AsOf                  time.Time         `json:"as_of_jst"`
+	Target                Opening           `json:"target"`
+	Previous              []Opening         `json:"previous_sessions"`
+	CompletePrevious      int               `json:"complete_previous_openings"`
+	MissingPrevious       []string          `json:"unavailable_previous_dates"`
+	CalculationAvailable  bool              `json:"calculation_available"`
+	PreviousMean          *string           `json:"previous_mean_volume_exact,omitempty"`
+	RelativeVolume        *string           `json:"relative_volume_exact,omitempty"`
+	AtLeastOne            *bool             `json:"relative_volume_at_least_one,omitempty"`
+	Problems              []string          `json:"problems"`
+	QualityPromoted       bool              `json:"quality_promoted"`
+	TradingEligible       bool              `json:"trading_eligible"`
+	StrategyAdopted       bool              `json:"strategy_adopted"`
+	OpeningPolicy         string            `json:"opening_policy,omitempty"`
+	AvailablePrevious     *int              `json:"available_previous_openings,omitempty"`
+	SourceContractAssumed bool              `json:"source_contract_assumed,omitempty"`
 }
 
 // ValidateSessions requires an explicit calendar. Observed rows must never
@@ -71,7 +75,7 @@ func ValidateSessions(date string, previous []string) error {
 	return nil
 }
 
-func opening(d marketdata.Dataset, date string) Opening {
+func opening(d marketdata.Dataset, date string, policy string) Opening {
 	o := Opening{Date: date, MissingMinutes: []string{}, Problems: []string{}, SourceIssues: []string{}}
 	var day *marketdata.Day
 	for i := range d.Days {
@@ -89,11 +93,14 @@ func opening(d marketdata.Dataset, date string) Opening {
 	}
 	total := new(big.Int)
 	rangeValue := Range{}
+	seen := false
+	missingAfterObserved := false
 	for minute := 0; minute < 5; minute++ {
 		at := marketdata.Clock(date, 9, minute)
 		b, ok := byTime[at.UTC()]
 		if !ok {
 			o.MissingMinutes = append(o.MissingMinutes, at.Format("15:04"))
+			missingAfterObserved = missingAfterObserved || seen
 			continue
 		}
 		if b.Volume == nil {
@@ -107,9 +114,10 @@ func opening(d marketdata.Dataset, date string) Opening {
 		if d.Source.ReceivedAt.Before(at.Add(time.Minute)) {
 			o.Problems = append(o.Problems, "unclosed_minute_"+at.Format("15:04"))
 		}
-		if minute == 0 {
+		if !seen {
 			rangeValue.Open, rangeValue.High, rangeValue.Low = b.Open, b.High, b.Low
 		}
+		seen = true
 		if b.High > rangeValue.High {
 			rangeValue.High = b.High
 		}
@@ -121,7 +129,11 @@ func opening(d marketdata.Dataset, date string) Opening {
 		}
 	}
 	if len(o.MissingMinutes) > 0 {
-		o.Problems = append(o.Problems, "missing_opening_minutes")
+		if policy == JQuantsPrefixPolicy && seen && !missingAfterObserved {
+			o.MissingInterpretation = "leading_absence_assumed_no_trades_under_jquants_contract"
+		} else {
+			o.Problems = append(o.Problems, "missing_opening_minutes")
+		}
 	}
 	if len(o.Problems) == 0 {
 		value := total.String()
@@ -131,7 +143,23 @@ func opening(d marketdata.Dataset, date string) Opening {
 }
 
 func Check(ctx context.Context, d marketdata.Dataset, date string, previous []string) (Report, error) {
+	return CheckWithPolicy(ctx, d, date, previous, "")
+}
+
+// CheckWithPolicy keeps the strict legacy default. The optional provider policy
+// is a research assumption, not proof of coverage, delayed auction, or fills.
+func CheckWithPolicy(ctx context.Context, d marketdata.Dataset, date string, previous []string, policy string) (Report, error) {
 	r := Report{Version: Version, Scope: "opening_volume_input_diagnostic_only", Symbol: d.Symbol, Origin: d.Origin, Source: d.Source, PriceScale: marketdata.PriceScale, AsOf: marketdata.Clock(date, 9, 5), Previous: []Opening{}, MissingPrevious: []string{}, Problems: []string{}}
+	if policy != "" && policy != JQuantsPrefixPolicy {
+		return r, errors.New("寄り付き入力方針を確認してください")
+	}
+	if policy != "" {
+		if d.Origin != "observed" || d.Environment != "production" || d.Source.Format != "jquants-bulk-minute-v0.1" || d.Source.Label != "start" {
+			return r, errors.New("無約定を仮定する入力は正規化済みJ-Quants一括分足に限定しています")
+		}
+		r.Version, r.OpeningPolicy, r.SourceContractAssumed = PolicyVersion, policy, true
+		r.AvailablePrevious = new(int)
+	}
 	if err := ValidateSessions(date, previous); err != nil {
 		return r, err
 	}
@@ -144,18 +172,22 @@ func Check(ctx context.Context, d marketdata.Dataset, date string, previous []st
 	if ctx.Err() != nil {
 		return r, errors.New("ORB入力検査を中断しました")
 	}
-	r.Target = opening(d, date)
+	r.Target = opening(d, date, policy)
 	total := new(big.Int)
+	available := 0
 	for _, day := range previous {
 		if ctx.Err() != nil {
 			return r, errors.New("ORB入力検査を中断しました")
 		}
-		o := opening(d, day)
+		o := opening(d, day, policy)
 		r.Previous = append(r.Previous, o)
 		if o.Volume == nil {
 			r.MissingPrevious = append(r.MissingPrevious, day)
 		} else {
-			r.CompletePrevious++
+			available++
+			if len(o.MissingMinutes) == 0 {
+				r.CompletePrevious++
+			}
 			v, _ := new(big.Int).SetString(*o.Volume, 10)
 			total.Add(total, v)
 		}
@@ -163,7 +195,10 @@ func Check(ctx context.Context, d marketdata.Dataset, date string, previous []st
 	if r.Target.Volume == nil {
 		r.Problems = append(r.Problems, "target_opening_unavailable")
 	}
-	if r.CompletePrevious != Lookback {
+	if r.AvailablePrevious != nil {
+		*r.AvailablePrevious = available
+	}
+	if available != Lookback {
 		r.Problems = append(r.Problems, "previous_14_openings_incomplete")
 	}
 	if len(r.Problems) > 0 {

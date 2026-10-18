@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader/internal/features/prepareorb"
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
 )
 
@@ -89,6 +90,29 @@ func TestORBV2VerifiesCalendarWindowAndKeepsQualityPending(t *testing.T) {
 	if json.Unmarshal(a, &report) != nil || !report.CalendarAutomaticallyVerified || report.CalendarSHA256 != hash(calendarRaw) || report.Sources[0].InputSHA256 != hash(barRaw) || report.Inputs[0].RelativeVolume == nil || *report.Inputs[0].RelativeVolume != "1" || report.Inputs[0].TradingEligible {
 		t.Fatal("calendar/provenance/quality changed")
 	}
+	m.OpeningPolicy = prepareorb.JQuantsPrefixPolicy
+	bars.Days[0].Bars = bars.Days[0].Bars[3:]
+	barRaw, _ = json.Marshal(bars)
+	_ = os.WriteFile("inputs/bars.json", barRaw, 0600)
+	write()
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"orb-input-check", "-input", "inputs/orb.json"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	// Extract only the reported path; file names have no ordering guarantee.
+	found := false
+	for _, line := range strings.Split(output.String(), "\n") {
+		if strings.HasPrefix(line, "保存: ") {
+			found = true
+			raw, _ := os.ReadFile(strings.TrimPrefix(line, "保存: "))
+			if json.Unmarshal(raw, &report) != nil || report.Version != prepareorb.PolicyVersion || report.Inputs[0].RelativeVolume == nil || *report.Inputs[0].RelativeVolume != "70/67" || report.Inputs[0].CompletePrevious != 13 || *report.Inputs[0].AvailablePrevious != 14 || !report.Inputs[0].SourceContractAssumed {
+				t.Fatal("explicit provider assumption not preserved")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("provider-policy report missing")
+	}
 	m.Previous[0] = "2026-06-01"
 	write()
 	if err := run(context.Background(), []string{"orb-input-check", "-input", "inputs/orb.json"}, &bytes.Buffer{}); err == nil {
@@ -142,6 +166,12 @@ func TestORBInputProvenanceReproducibilityAndSafeOutput(t *testing.T) {
 func TestORBManifestAndArgumentsRejectInvalidInput(t *testing.T) {
 	t.Chdir(t.TempDir())
 	m := writeORBFixture(t)
+	m.OpeningPolicy = prepareorb.JQuantsPrefixPolicy
+	invalidPolicy, _ := json.Marshal(m)
+	if _, err := decodeORB(invalidPolicy); err == nil {
+		t.Fatal("provider policy admitted for legacy CSV")
+	}
+	m.OpeningPolicy = ""
 	raw, _ := json.Marshal(m)
 	for _, value := range [][]byte{append(raw, []byte(" {}")...), bytes.Replace(raw, []byte(`"version":1`), []byte(`"version":1,"quality_override":true`), 1), bytes.Replace(raw, []byte(`"environment":"test"`), []byte(`"environment":"secret-marker"`), 1)} {
 		if _, err := decodeORB(value); err == nil || strings.Contains(err.Error(), "secret-marker") {

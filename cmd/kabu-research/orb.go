@@ -35,6 +35,7 @@ type orbManifest struct {
 	CSVLabel       string      `json:"csv_label"`
 	Sources        []orbSource `json:"sources"`
 	CalendarFile   string      `json:"calendar_file,omitempty"`
+	OpeningPolicy  string      `json:"opening_policy,omitempty"`
 }
 
 type orbProvenance struct {
@@ -72,6 +73,9 @@ func decodeORB(raw []byte) (orbManifest, error) {
 	if err := prepareorb.ValidateSessions(m.Date, m.Previous); err != nil {
 		return m, err
 	}
+	if m.OpeningPolicy != "" && (m.Version != 2 || m.OpeningPolicy != prepareorb.JQuantsPrefixPolicy) {
+		return m, errors.New("入力方針はmanifest v2の固定したJ-Quants研究方針だけを指定できます")
+	}
 	sort.Slice(m.Sources, func(i, j int) bool { return m.Sources[i].Symbol < m.Sources[j].Symbol })
 	pattern := regexp.MustCompile(`^[0-9A-Z]{4}@1$`)
 	for i, s := range m.Sources {
@@ -108,6 +112,10 @@ func runORB(ctx context.Context, args []string, out io.Writer) error {
 	r := orbReport{Version: prepareorb.Version, ManifestSHA256: hash(raw), CalendarSource: m.CalendarSource, Environment: m.Environment, Sources: []orbProvenance{}, Inputs: []prepareorb.Report{}, Limitations: []string{
 		"opening_ohlcv_only_not_strategy_or_backtest", "calendar_is_caller_declared_not_automatically_verified", "source_quality_not_promoted", "atr_daily_history_and_historical_universe_unverified", "no_ranking_or_execution_or_pnl", "no_strategy_adoption_or_order_capability",
 	}}
+	if m.OpeningPolicy != "" {
+		r.Version = prepareorb.PolicyVersion
+		r.Limitations = append(r.Limitations, "leading_absence_assumed_no_trades_not_independent_coverage_or_auction_evidence", "fixed_0900_0904_window_no_zero_fill_or_shift_or_reference_skip")
+	}
 	if m.Version == 2 {
 		calendarRaw, err := readInput(relativeORBPath(*input, m.CalendarFile))
 		if err != nil {
@@ -169,7 +177,7 @@ func runORB(ctx context.Context, args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		checked, err := prepareorb.Check(ctx, bars, m.Date, m.Previous)
+		checked, err := prepareorb.CheckWithPolicy(ctx, bars, m.Date, m.Previous, m.OpeningPolicy)
 		if err != nil {
 			return err
 		}
@@ -198,8 +206,13 @@ func runORB(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	for _, row := range r.Inputs {
-		if _, err := fmt.Fprintf(out, "ORB入力: symbol=%s / date=%s / previous_complete=%d/14 / previous_unavailable=%d / target_complete=%t / calculation_available=%t\n", row.Symbol, m.Date, row.CompletePrevious, len(row.MissingPrevious), row.Target.Volume != nil, row.CalculationAvailable); err != nil {
+		if _, err := fmt.Fprintf(out, "ORB入力: symbol=%s / date=%s / previous_complete=%d/14 / previous_unavailable=%d / target_complete=%t / calculation_available=%t\n", row.Symbol, m.Date, row.CompletePrevious, len(row.MissingPrevious), row.Target.Volume != nil && len(row.Target.MissingMinutes) == 0, row.CalculationAvailable); err != nil {
 			return errors.New("ORB入力結果を出力できません")
+		}
+		if row.AvailablePrevious != nil {
+			if _, err := fmt.Fprintf(out, "入力方針: %s / previous_available=%d/14 / source_contract_assumed=true\n", row.OpeningPolicy, *row.AvailablePrevious); err != nil {
+				return errors.New("ORB入力方針を出力できません")
+			}
 		}
 	}
 	_, err = fmt.Fprintf(out, "strategy_adopted=false / trading_eligible=false / quality_promoted=false / backtest=false\n保存: %s\n実行記録: %s\n", path, runPath)
