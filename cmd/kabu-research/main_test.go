@@ -10,6 +10,19 @@ import (
 	"testing"
 )
 
+func TestJQuantsRejectsCSVAndEnvironmentOverrides(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("input.json", []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, extra := range [][]string{{"-environment", "test"}, {"-csv-label", "end"}, {"-captured-at", "2026-06-01T00:00:00Z"}} {
+		args := append([]string{"build-bars", "-format", "jquants", "-input", "input.json", "-symbol", "0000@1"}, extra...)
+		if err := run(context.Background(), args, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "CSV指定") {
+			t.Fatal("J-Quants metadata could be overridden")
+		}
+	}
+}
+
 func TestDemoAndSavedReplayAreIdenticalAndHashesResolve(t *testing.T) {
 	for _, side := range []string{"long", "short"} {
 		t.Run(side, func(t *testing.T) {

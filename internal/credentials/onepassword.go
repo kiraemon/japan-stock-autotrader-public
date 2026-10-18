@@ -23,6 +23,19 @@ type config struct {
 // OnePassword is called only after the caller acquires the broker session gate.
 // root is the application project directory, never an arbitrary command path.
 func OnePassword(ctx context.Context, root, environment string) (string, error) {
+	if environment != "test" && environment != "production" {
+		return "", errors.New("接続環境が不正です")
+	}
+	return onePassword(ctx, root, environment)
+}
+
+// JQuants resolves only the separately configured market-data API key.
+// The caller acquires the J-Quants connection gate before resolving it.
+func JQuants(ctx context.Context, root string) (string, error) {
+	return onePassword(ctx, root, "jquants")
+}
+
+func onePassword(ctx context.Context, root, environment string) (string, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return "", errors.New("プロジェクトのパスを解決できません")
@@ -32,7 +45,7 @@ func OnePassword(ctx context.Context, root, environment string) (string, error) 
 
 func resolve(ctx context.Context, root, environment string,
 	decrypt func([]byte) ([]byte, error), read func(context.Context, string, string, []byte) (string, error)) (string, error) {
-	if environment != "test" && environment != "production" {
+	if environment != "test" && environment != "production" && environment != "jquants" {
 		return "", errors.New("接続環境が不正です")
 	}
 	f, err := os.Open(filepath.Join(root, "secrets", "onepassword.json"))

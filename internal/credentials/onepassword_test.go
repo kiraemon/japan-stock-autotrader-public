@@ -77,6 +77,29 @@ func TestChildEnvironmentHasNoOtherOnePasswordAuthentication(t *testing.T) {
 	}
 }
 
+func TestJQuantsReferenceDoesNotChangeBrokerEnvironment(t *testing.T) {
+	if _, err := OnePassword(context.Background(), t.TempDir(), "jquants"); err == nil {
+		t.Fatal("broker resolved a data-service key")
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "secrets"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(config{Version: 1, References: map[string]string{"jquants": "op://test-vault/item/password"}, ProtectedToken: []byte("synthetic-encrypted")})
+	if err := os.WriteFile(filepath.Join(root, "secrets", "onepassword.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := resolve(context.Background(), root, "jquants", func([]byte) ([]byte, error) { return []byte("synthetic-service-token"), nil }, func(_ context.Context, _ string, reference string, _ []byte) (string, error) {
+		if reference != "op://test-vault/item/password" {
+			t.Fatal("wrong data-service reference")
+		}
+		return "synthetic-jquants-key", nil
+	})
+	if err != nil || value != "synthetic-jquants-key" {
+		t.Fatal("data-service resolution failed", err)
+	}
+}
+
 func TestResolveIsEnvironmentSpecificAndFailsClosed(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "secrets"), 0700); err != nil {

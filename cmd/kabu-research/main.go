@@ -55,8 +55,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	fs.SetOutput(out)
 	input := fs.String("input", "", "元JSONまたはCSVのパス（値はログへ表示しない）")
 	reference := fs.String("reference", "", "照合先分足JSON / 元歩み値JSON / history-feed-checkの2番目の履歴")
-	format := fs.String("format", "history", "build-barsの入力: history / csv")
-	symbol := fs.String("symbol", "", "CSVの銘柄・市場（例7203@1）")
+	format := fs.String("format", "history", "build-barsの入力: history / csv / jquants")
+	symbol := fs.String("symbol", "", "入力の銘柄・市場（例7203@1）")
 	environment := fs.String("environment", "production", "CSVの環境: production / test")
 	label := fs.String("csv-label", "", "CSVの時刻ラベル: start / end（必須、取得元の仕様を確認）")
 	captured := fs.String("captured-at", "", "CSV取得日時: RFC3339（CSV時刻の意味は別途確認）")
@@ -131,6 +131,11 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			switch *format {
 			case "history":
 				dataset, err = buildbars.FromHistory(ctx, raw)
+			case "jquants":
+				if *environment != "production" || *label != "" || *captured != "" {
+					return errors.New("J-Quantsは取得アーカイブの時刻・本番データを使い、CSV指定を受け付けません")
+				}
+				dataset, err = buildbars.FromJQuantsCLI(ctx, raw, *symbol)
 			case "csv":
 				at, parseErr := time.Parse(time.RFC3339, *captured)
 				if parseErr != nil {
@@ -138,7 +143,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 				}
 				dataset, err = buildbars.FromCSV(ctx, raw, *symbol, *environment, *label, at)
 			default:
-				return errors.New("formatはhistoryまたはcsvです")
+				return errors.New("formatはhistory/csv/jquantsです")
 			}
 			if err != nil {
 				return err
@@ -204,7 +209,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 				return errors.New("照合結果を出力できません")
 			}
 		}
-		_, err = fmt.Fprintf(out, "保存: %s\n実行記録: %s\nquality_promoted=false（同一提供元の照合・全約定や実約定の保証なし）\n", path, manifest)
+		_, err = fmt.Fprintf(out, "保存: %s\n実行記録: %s\nquality_promoted=false（重なる確定足の照合・全約定や実約定の保証なし）\n", path, manifest)
 		return err
 	}
 	inputName := filepath.Base(*input)
