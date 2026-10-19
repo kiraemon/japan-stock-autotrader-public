@@ -28,24 +28,69 @@ type Trade struct {
 	GrossBPS          string        `json:"gross_return_bps"`
 }
 type Report struct {
-	Rule            string             `json:"strategy_version"`
-	Model           string             `json:"execution_model_version"`
-	Date            string             `json:"date_jst"`
-	Symbol          string             `json:"symbol"`
-	SourceSHA       string             `json:"source_sha256"`
-	Scope           string             `json:"scope"`
-	Status          string             `json:"status"`
-	Reasons         []string           `json:"reasons"`
-	Decision        *s01.EntryDecision `json:"decision,omitempty"`
-	Trade           *Trade             `json:"trade,omitempty"`
-	QualityPromoted bool               `json:"quality_promoted"`
-	TradingEligible bool               `json:"trading_eligible"`
-	StrategyAdopted bool               `json:"strategy_adopted"`
+	Rule            string                    `json:"strategy_version"`
+	Model           string                    `json:"execution_model_version"`
+	Date            string                    `json:"date_jst"`
+	Symbol          string                    `json:"symbol"`
+	SourceSHA       string                    `json:"source_sha256"`
+	Scope           string                    `json:"scope"`
+	Status          string                    `json:"status"`
+	Reasons         []string                  `json:"reasons"`
+	Decision        *s01.EntryDecision        `json:"decision,omitempty"`
+	Trade           *Trade                    `json:"trade,omitempty"`
+	QualityPromoted bool                      `json:"quality_promoted"`
+	TradingEligible bool                      `json:"trading_eligible"`
+	StrategyAdopted bool                      `json:"strategy_adopted"`
+	Diagnostic      *marketdata.JQuantsWindow `json:"jquants_price_diagnostic,omitempty"`
+	RVOL            string                    `json:"relative_volume_exact,omitempty"`
 }
 
 // Run is deliberately synthetic-only. A later bounded provider diagnostic must
 // retain original input evidence separately; this is not a quality override.
 func Run(ctx context.Context, d marketdata.Dataset, date string, opening s01.Range, stopDistance int64) (Report, error) {
+	return runPrice(ctx, d, date, opening, stopDistance, nil, "")
+}
+
+// DiagnoseJQuants recalculates the provider's fixed-window/day checks rather
+// than accepting an external eligibility flag. The supplied RVOL is the pinned
+// preparation result, not a future-volume filter. No quality flag is promoted.
+func DiagnoseJQuants(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string) (Report, error) {
+	check, err := marketdata.CheckJQuantsWindow(ctx, d, date, daily)
+	if err != nil {
+		return Report{}, err
+	}
+	if check.Eligible {
+		actual := s01.Range{}
+		for _, day := range d.Days {
+			if day.Date != date {
+				continue
+			}
+			for _, b := range day.Bars {
+				if b.Start.Before(marketdata.Clock(date, 9, 0)) || b.Start.After(marketdata.Clock(date, 9, 4)) {
+					continue
+				}
+				if actual.Open == 0 {
+					actual.Open = b.Open
+					actual.High = b.High
+					actual.Low = b.Low
+				}
+				if b.High > actual.High {
+					actual.High = b.High
+				}
+				if b.Low < actual.Low {
+					actual.Low = b.Low
+				}
+				actual.Close = b.Close
+			}
+		}
+		if actual != opening {
+			return Report{}, errors.New("固定した寄り5分レンジと分足が一致しません")
+		}
+	}
+	return runPrice(ctx, d, date, opening, stopDistance, &check, rvol)
+}
+
+func runPrice(ctx context.Context, d marketdata.Dataset, date string, opening s01.Range, stopDistance int64, check *marketdata.JQuantsWindow, rvol string) (Report, error) {
 	r := Report{Rule: s01.Version, Model: ModelVersion, Date: date, Symbol: d.Symbol, SourceSHA: d.Source.SHA256, Scope: "synthetic_logic_test", Status: "unevaluable", Reasons: []string{}}
 	if err := marketdata.Validate(d); err != nil {
 		return r, err
@@ -56,10 +101,28 @@ func Run(ctx context.Context, d marketdata.Dataset, date string, opening s01.Ran
 	if stopDistance <= 0 || stopDistance > marketdata.MaxPrice {
 		return r, errors.New("S01の正のATR損切り距離を確認してください")
 	}
-	if d.Origin != "synthetic" {
+	if check == nil && d.Origin != "synthetic" {
 		r.Scope = "observed_quality_unverified"
 		r.Reasons = append(r.Reasons, "observed_price_diagnostic_required")
 		return r, nil
+	}
+	if check != nil {
+		r.Scope = "jquants_same_provider_price_pattern_diagnostic"
+		r.Diagnostic = check
+		r.RVOL = rvol
+		if !check.Eligible {
+			r.Reasons = append(r.Reasons, check.Reasons...)
+			return r, nil
+		}
+		v, ok := s01.Exact(rvol)
+		if !ok {
+			return r, errors.New("固定した寄り5分の相対出来高を確認してください")
+		}
+		if v.Cmp(big.NewRat(1, 1)) < 0 {
+			r.Status = "no_trade"
+			r.Reasons = append(r.Reasons, "opening_rvol_below_one")
+			return r, nil
+		}
 	}
 	var day *marketdata.Day
 	for i := range d.Days {
@@ -72,7 +135,7 @@ func Run(ctx context.Context, d marketdata.Dataset, date string, opening s01.Ran
 		r.Reasons = append(r.Reasons, "day_missing")
 		return r, nil
 	}
-	if len(day.Issues) > 0 {
+	if check == nil && len(day.Issues) > 0 {
 		r.Reasons = append(r.Reasons, day.Issues...)
 		return r, nil
 	}

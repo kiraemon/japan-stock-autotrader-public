@@ -42,22 +42,23 @@ type Cost struct {
 	MedianBPS    *string `json:"median_net_return_bps,omitempty"`
 }
 type Report struct {
-	Version                   int              `json:"report_version"`
-	Rule                      string           `json:"strategy_version"`
-	Model                     string           `json:"execution_model_version"`
-	Direction                 r001.Direction   `json:"direction"`
-	Variant                   r001.Variant     `json:"variant"`
-	Symbol                    string           `json:"symbol"`
-	PriceScale                int64            `json:"price_scale"`
-	Scope                     string           `json:"scope"`
-	SourceSHA256              string           `json:"source_sha256"`
-	StrategyAdopted           bool             `json:"strategy_adopted"`
-	PortfolioMode             bool             `json:"portfolio_mode"`
-	ShortAvailabilityVerified bool             `json:"short_availability_verified"`
-	Days                      []Result         `json:"days"`
-	Costs                     []Cost           `json:"cost_sensitivity"`
-	BaselineCosts             []Cost           `json:"baseline_cost_sensitivity"`
-	Diagnostic                *PriceDiagnostic `json:"price_diagnostic,omitempty"`
+	Version                   int                       `json:"report_version"`
+	Rule                      string                    `json:"strategy_version"`
+	Model                     string                    `json:"execution_model_version"`
+	Direction                 r001.Direction            `json:"direction"`
+	Variant                   r001.Variant              `json:"variant"`
+	Symbol                    string                    `json:"symbol"`
+	PriceScale                int64                     `json:"price_scale"`
+	Scope                     string                    `json:"scope"`
+	SourceSHA256              string                    `json:"source_sha256"`
+	StrategyAdopted           bool                      `json:"strategy_adopted"`
+	PortfolioMode             bool                      `json:"portfolio_mode"`
+	ShortAvailabilityVerified bool                      `json:"short_availability_verified"`
+	Days                      []Result                  `json:"days"`
+	Costs                     []Cost                    `json:"cost_sensitivity"`
+	BaselineCosts             []Cost                    `json:"baseline_cost_sensitivity"`
+	Diagnostic                *PriceDiagnostic          `json:"price_diagnostic,omitempty"`
+	JQuantsDiagnostic         *marketdata.JQuantsWindow `json:"jquants_price_diagnostic,omitempty"`
 }
 
 func Run(ctx context.Context, input marketdata.Dataset, direction r001.Direction) (Report, error) {
