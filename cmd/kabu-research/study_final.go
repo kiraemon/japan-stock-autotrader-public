@@ -41,13 +41,25 @@ func studyBuildIdentity() (string, string) {
 	return revision, dirty
 }
 func checkStudyFreeze(path string, manifest []byte) (string, error) {
+	return checkStudyFreezeMode(path, manifest, false)
+}
+
+func checkRound2Freeze(path string, manifest []byte) (string, error) {
+	return checkStudyFreezeMode(path, manifest, true)
+}
+
+func checkStudyFreezeMode(path string, manifest []byte, round2 bool) (string, error) {
+	planSHA, books, version := s01.PlanSHA256, 480, "s01-comparative-study-v0.1"
+	if round2 {
+		planSHA, books, version = s01.Round2ScopeSHA256, 1440, "s01-round2-study-v0.1"
+	}
 	raw, err := readInput(path)
 	if err != nil {
 		return "", err
 	}
 	var f studyFreeze
 	revision, dirty := studyBuildIdentity()
-	if strictJSON(raw, &f) != nil || f.Version != 1 || len(f.Revision) != 40 || f.Revision != revision || dirty != "false" || f.ManifestSHA != hash(manifest) || f.PlanSHA != s01.PlanSHA256 {
+	if strictJSON(raw, &f) != nil || f.Version != 1 || len(f.Revision) != 40 || f.Revision != revision || dirty != "false" || f.ManifestSHA != hash(manifest) || f.PlanSHA != planSHA || round2 && f.OriginalRevision != revision {
 		return "", errors.New("最終評価には同じ入力/条件とcleanビルド版を固定してください")
 	}
 	dRaw, err := pinnedInput(f.Development.Path, f.Development.SHA)
@@ -55,7 +67,7 @@ func checkStudyFreeze(path string, manifest []byte) (string, error) {
 		return "", err
 	}
 	var d studyReport
-	if strictJSON(dRaw, &d) != nil || d.Phase != "development" || d.HoldoutRead || d.ManifestSHA != f.ManifestSHA || d.PlanSHA != f.PlanSHA || len(d.Books) != 480 {
+	if strictJSON(dRaw, &d) != nil || d.Version != version || d.Phase != "development" || d.HoldoutRead || d.ManifestSHA != f.ManifestSHA || d.PlanSHA != f.PlanSHA || len(d.Books) != books {
 		return "", errors.New("検査済みの開発/検証レポートを固定してください")
 	}
 	rRaw, err := pinnedInput(f.DevelopmentRecord.Path, f.DevelopmentRecord.SHA)
@@ -80,7 +92,7 @@ func checkStudyFreeze(path string, manifest []byte) (string, error) {
 		Holdout     bool   `json:"holdout_pnl_read"`
 		Books       int    `json:"books"`
 	}
-	if json.Unmarshal(aRaw, &audit) != nil || audit.ReportSHA != f.Development.SHA || !audit.Independent || audit.Holdout || audit.Books != 480 {
+	if json.Unmarshal(aRaw, &audit) != nil || audit.ReportSHA != f.Development.SHA || !audit.Independent || audit.Holdout || audit.Books != books {
 		return "", errors.New("独立した開発ブックの検算を固定してください")
 	}
 	vRaw, err := pinnedInput(f.Verification.Path, f.Verification.SHA)
@@ -133,7 +145,14 @@ type studyOpening struct {
 // Replays are allowed only for exactly the same frozen inputs/code. This is a
 // persistent one-version opening record, not permission to tune on holdout.
 func reserveStudyOpening(freezeSHA, manifestSHA, revision string) error {
+	return reserveStudyOpeningMode(freezeSHA, manifestSHA, revision, false)
+}
+
+func reserveStudyOpeningMode(freezeSHA, manifestSHA, revision string, round2 bool) error {
 	path := filepath.Join("data", "research", "s01-holdout-opening-20261019.json")
+	if round2 {
+		path = filepath.Join("data", "research", "s01-r2-holdout-opening-20261019.json")
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return errors.New("最終評価の開封記録先を確認できません")
 	}

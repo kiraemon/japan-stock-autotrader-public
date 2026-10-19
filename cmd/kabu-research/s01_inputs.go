@@ -27,6 +27,8 @@ type s01InputManifest struct {
 	ReconciliationSHA string `json:"reconciliation_sha256"`
 	Plan              string `json:"strategy_plan"`
 	PlanSHA           string `json:"strategy_plan_sha256"`
+	Period            string `json:"period_plan,omitempty"`
+	PeriodSHA         string `json:"period_sha256,omitempty"`
 }
 type s01MinuteFile struct {
 	Month     string `json:"month"`
@@ -47,15 +49,18 @@ type s01Normalization struct {
 	Quality     bool            `json:"quality_promoted"`
 }
 type s01InputCase struct {
-	Date                   string            `json:"date_jst"`
-	LiquidityRank          int               `json:"liquidity_rank"`
-	Opening                prepareorb.Report `json:"opening"`
-	ATR                    s01.ATRReport     `json:"atr"`
-	InputsAvailable        bool              `json:"indicators_available"`
-	RvolPassed             bool              `json:"rvol_at_least_one"`
-	PriorVolumeActionDates []string          `json:"raw_volume_reference_action_dates"`
-	ExPostIssues           []string          `json:"ex_post_input_issues"`
-	Problems               []string          `json:"problems"`
+	Date                   string             `json:"date_jst"`
+	LiquidityRank          int                `json:"liquidity_rank"`
+	Opening                prepareorb.Report  `json:"opening"`
+	ATR                    s01.ATRReport      `json:"atr"`
+	InputsAvailable        bool               `json:"indicators_available"`
+	RvolPassed             bool               `json:"rvol_at_least_one"`
+	PriorVolumeActionDates []string           `json:"raw_volume_reference_action_dates"`
+	ExPostIssues           []string           `json:"ex_post_input_issues"`
+	Problems               []string           `json:"problems"`
+	LegacyOpening          *prepareorb.Report `json:"legacy_opening,omitempty"`
+	LegacyAvailable        *bool              `json:"legacy_indicators_available,omitempty"`
+	LegacyRvolPassed       *bool              `json:"legacy_rvol_at_least_one,omitempty"`
 }
 type s01StockInputs struct {
 	Version         string            `json:"version"`
@@ -107,7 +112,19 @@ func pinnedInput(path, expected string) ([]byte, error) {
 }
 
 func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("prepare-s01", flag.ContinueOnError)
+	return runS01InputsMode(ctx, args, out, false)
+}
+
+func runS01InputsMode(ctx context.Context, args []string, out io.Writer, round2 bool) error {
+	command, manifestVersion, planSHA := "prepare-s01", 1, s01.PlanSHA256
+	indexVersion, stockVersion := "s01-input-index-v0.1", "s01-stock-input-v0.1"
+	indexPrefix, stockPrefix := "s01-input-index", "s01-inputs"
+	if round2 {
+		command, manifestVersion, planSHA = "prepare-s01-round2", 2, s01.Round2ScopeSHA256
+		indexVersion, stockVersion = "s01-round2-input-index-v0.1", "s01-round2-stock-input-v0.1"
+		indexPrefix, stockPrefix = "s01-r2-input-index", "s01-r2-inputs"
+	}
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "固定済み母集団・分足・日足照合・戦略条件のmanifest（指標準備のみ）")
 	if err := fs.Parse(args); err != nil {
@@ -124,7 +141,7 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	var m s01InputManifest
-	if strictJSON(raw, &m) != nil || m.Version != 1 {
+	if strictJSON(raw, &m) != nil || m.Version != manifestVersion || (!round2 && (m.Period != "" || m.PeriodSHA != "")) {
 		return errors.New("S01入力manifestの版/形式を確認してください")
 	}
 	resolve := func(path string) string { return relativeORBPath(*input, path) }
@@ -132,7 +149,7 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if hash(planRaw) != s01.PlanSHA256 {
+	if hash(planRaw) != planSHA {
 		return errors.New("実装したS01条件版とJSONのhashが一致しません")
 	}
 	uRaw, err := pinnedInput(resolve(m.Universe), m.UniverseSHA)
@@ -226,6 +243,25 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 		}
 		sessions = append(sessions, calendars[month]...)
 	}
+	if round2 {
+		periodRaw, err := pinnedInput(resolve(m.Period), m.PeriodSHA)
+		if err != nil {
+			return err
+		}
+		evaluation := []string{}
+		for _, day := range u.Universe.Days {
+			if len(day.Picks) != 30 || len(day.Problems) != 0 {
+				return errors.New("第2回研究の日別30銘柄を確認してください")
+			}
+			evaluation = append(evaluation, day.Date)
+		}
+		if _, err := round2Periods(periodRaw, evaluation); err != nil {
+			return err
+		}
+		if err := round2CalendarPins(periodRaw, u.Sources, sessions); err != nil {
+			return err
+		}
+	}
 	byCode := map[string][]marketdata.DailyBar{}
 	dailyByKey := map[string]marketdata.DailyBar{}
 	for _, d := range daily.Bars {
@@ -266,6 +302,10 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 	}
 	sort.Strings(symbols)
 	index := s01InputIndex{Version: "s01-input-index-v0.1", ManifestSHA: hash(raw), PlanSHA: m.PlanSHA, UniverseSHA: m.UniverseSHA, NormalizationSHA: m.NormalizationSHA, ReconciliationSHA: m.ReconciliationSHA, DailySHA: u.DailySHA, Files: []s01InputFile{}, Limitations: []string{"indicators_only_no_signals_fills_or_pnl", "raw_opening_volume_corporate_actions_reported_not_revised", "current_day_corporate_action_is_ex_post_quality_not_pretrade_information", "historical_receive_times_and_trade_eligibility_unverified", "same_provider_reconciliation_not_independent_market_verification"}}
+	index.Version = indexVersion
+	if round2 {
+		index.Limitations = append(index.Limitations, "prior_whole_opening_zero_volume_assumption_requires_bound_daily_evidence", "legacy_opening_and_indicator_status_retained_separately", "retrospective_2025_not_forward_observation")
+	}
 	for _, symbol := range symbols {
 		if ctx.Err() != nil {
 			return errors.New("S01指標準備を中断しました")
@@ -298,8 +338,15 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		stock := s01StockInputs{Version: "s01-stock-input-v0.1", Symbol: symbol, PlanSHA: m.PlanSHA, UniverseSHA: m.UniverseSHA, JoinedSource: joined.Source, Files: files, Cases: []s01InputCase{}}
+		stock := s01StockInputs{Version: stockVersion, Symbol: symbol, PlanSHA: m.PlanSHA, UniverseSHA: m.UniverseSHA, JoinedSource: joined.Source, Files: files, Cases: []s01InputCase{}}
 		code := strings.TrimSuffix(symbol, "@1") + "0"
+		var evidence prepareorb.PriorZeroVolumeEvidence
+		if round2 {
+			evidence, err = prepareorb.BuildPriorZeroVolumeEvidence(ctx, joined, byCode[code])
+			if err != nil {
+				return err
+			}
+		}
 		ready, passed := 0, 0
 		for _, target := range targets[symbol] {
 			at := sort.SearchStrings(sessions, target.date)
@@ -321,6 +368,13 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 			opening, err := prepareorb.CheckWithPolicy(ctx, subset, target.date, previous, prepareorb.JQuantsPrefixPolicy)
 			if err != nil {
 				return err
+			}
+			legacyOpening := opening
+			if round2 {
+				opening, err = prepareorb.CheckWithPriorZeroVolume(ctx, subset, target.date, previous, evidence)
+				if err != nil {
+					return err
+				}
 			}
 			atr, err := s01.ATR(ctx, byCode[code], symbol, target.date, sessions[at-15:at])
 			if err != nil {
@@ -347,6 +401,11 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 			}
 			row.InputsAvailable = len(row.Problems) == 0 && len(row.ExPostIssues) == 0
 			row.RvolPassed = opening.AtLeastOne != nil && *opening.AtLeastOne
+			if round2 {
+				legacyReady := legacyOpening.CalculationAvailable && atr.Available && atr.StopDistance != nil && *atr.StopDistance > 0 && len(row.ExPostIssues) == 0
+				legacyPassed := legacyOpening.AtLeastOne != nil && *legacyOpening.AtLeastOne
+				row.LegacyOpening, row.LegacyAvailable, row.LegacyRvolPassed = &legacyOpening, &legacyReady, &legacyPassed
+			}
 			if row.InputsAvailable {
 				ready++
 				if row.RvolPassed {
@@ -355,7 +414,7 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 			}
 			stock.Cases = append(stock.Cases, row)
 		}
-		path, body, err := saveContentAddressed("s01-inputs", stock)
+		path, body, err := saveContentAddressed(stockPrefix, stock)
 		if err != nil {
 			return err
 		}
@@ -364,11 +423,11 @@ func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 		index.Available += ready
 		index.RvolPassed += passed
 	}
-	path, body, err := save("s01-input-index", index)
+	path, body, err := save(indexPrefix, index)
 	if err != nil {
 		return err
 	}
-	record, err := recordRun("prepare-s01", filepath.Base(*input), raw, hash(raw), path, body, m)
+	record, err := recordRun(command, filepath.Base(*input), raw, hash(raw), path, body, m)
 	if err != nil {
 		return err
 	}

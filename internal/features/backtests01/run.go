@@ -43,6 +43,7 @@ type Report struct {
 	StrategyAdopted bool                      `json:"strategy_adopted"`
 	Diagnostic      *marketdata.JQuantsWindow `json:"jquants_price_diagnostic,omitempty"`
 	RVOL            string                    `json:"relative_volume_exact,omitempty"`
+	Round2          *s01.Round2Policy         `json:"round2_research_policy,omitempty"`
 }
 
 // Run is deliberately synthetic-only. A later bounded provider diagnostic must
@@ -55,6 +56,24 @@ func Run(ctx context.Context, d marketdata.Dataset, date string, opening s01.Ran
 // than accepting an external eligibility flag. The supplied RVOL is the pinned
 // preparation result, not a future-volume filter. No quality flag is promoted.
 func DiagnoseJQuants(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string) (Report, error) {
+	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, stopDistance, rvol, nil)
+}
+
+// DiagnoseRound2 has exactly three predeclared research policies. Input I/O,
+// source-bound preparation and the research book are composed by cmd.
+func DiagnoseRound2(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, atrScaledExact, rvol, id string) (Report, error) {
+	p, err := s01.Round2Rule(id)
+	if err != nil {
+		return Report{}, err
+	}
+	distance, err := s01.Round2StopDistance(id, atrScaledExact)
+	if err != nil {
+		return Report{}, err
+	}
+	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, distance, rvol, &p)
+}
+
+func diagnoseJQuantsPolicy(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string, policy *s01.Round2Policy) (Report, error) {
 	check, err := marketdata.CheckJQuantsWindow(ctx, d, date, daily)
 	if err != nil {
 		return Report{}, err
@@ -87,11 +106,18 @@ func DiagnoseJQuants(ctx context.Context, d marketdata.Dataset, date string, dai
 			return Report{}, errors.New("固定した寄り5分レンジと分足が一致しません")
 		}
 	}
-	return runPrice(ctx, d, date, opening, stopDistance, &check, rvol)
+	return runPricePolicy(ctx, d, date, opening, stopDistance, &check, rvol, policy)
 }
 
 func runPrice(ctx context.Context, d marketdata.Dataset, date string, opening s01.Range, stopDistance int64, check *marketdata.JQuantsWindow, rvol string) (Report, error) {
+	return runPricePolicy(ctx, d, date, opening, stopDistance, check, rvol, nil)
+}
+
+func runPricePolicy(ctx context.Context, d marketdata.Dataset, date string, opening s01.Range, stopDistance int64, check *marketdata.JQuantsWindow, rvol string, policy *s01.Round2Policy) (Report, error) {
 	r := Report{Rule: s01.Version, Model: ModelVersion, Date: date, Symbol: d.Symbol, SourceSHA: d.Source.SHA256, Scope: "synthetic_logic_test", Status: "unevaluable", Reasons: []string{}}
+	if policy != nil {
+		r.Rule, r.Round2 = policy.ID, policy
+	}
 	if err := marketdata.Validate(d); err != nil {
 		return r, err
 	}
@@ -118,9 +144,15 @@ func runPrice(ctx context.Context, d marketdata.Dataset, date string, opening s0
 		if !ok {
 			return r, errors.New("固定した寄り5分の相対出来高を確認してください")
 		}
-		if v.Cmp(big.NewRat(1, 1)) < 0 {
+		minimum := big.NewRat(1, 1)
+		reason := "opening_rvol_below_one"
+		if policy != nil {
+			minimum, _ = s01.Exact(policy.MinimumRVOL)
+			reason = "opening_rvol_below_round2_minimum"
+		}
+		if v.Cmp(minimum) < 0 {
 			r.Status = "no_trade"
-			r.Reasons = append(r.Reasons, "opening_rvol_below_one")
+			r.Reasons = append(r.Reasons, reason)
 			return r, nil
 		}
 	}

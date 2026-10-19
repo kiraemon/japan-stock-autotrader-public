@@ -53,6 +53,7 @@ type studyMatrixRow struct {
 	Window       marketdata.JQuantsWindow `json:"price_window"`
 	Models       []researchbook.Case      `json:"models"`
 	PriorActions []string                 `json:"raw_volume_reference_action_dates"`
+	Cohorts      *round2Cohorts           `json:"round2_comparison_cohorts,omitempty"`
 }
 type studyMatrix struct {
 	Version     string           `json:"version"`
@@ -69,10 +70,12 @@ type studyArtifact struct {
 	SHA  string `json:"sha256"`
 }
 type studyBook struct {
-	Model     string              `json:"model"`
-	Partition string              `json:"partition"`
-	Artifact  studyArtifact       `json:"artifact"`
-	Summary   researchbook.Report `json:"summary"`
+	Model      string              `json:"model"`
+	Partition  string              `json:"partition"`
+	Artifact   studyArtifact       `json:"artifact"`
+	Summary    researchbook.Report `json:"summary"`
+	Cohort     string              `json:"comparison_cohort,omitempty"`
+	Round2Gate *round2GateReport   `json:"round2_candidate_gate,omitempty"`
 }
 type studyReport struct {
 	Version       string          `json:"version"`
@@ -125,7 +128,21 @@ func studyPeriods(raw []byte, sessions []string) (map[string][]string, error) {
 }
 
 func runStudy(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("study-s01", flag.ContinueOnError)
+	return runStudyMode(ctx, args, out, false)
+}
+
+func runStudyMode(ctx context.Context, args []string, out io.Writer, round2 bool) error {
+	command, planSHA, prepVersion := "study-s01", s01.PlanSHA256, 1
+	indexVersion, stockVersion := "s01-input-index-v0.1", "s01-stock-input-v0.1"
+	reportVersion, reportPrefix, matrixPrefix, bookPrefix := "s01-comparative-study-v0.1", "s01-study", "study-cases", "study-book"
+	models := append([]string{}, studyModels...)
+	if round2 {
+		command, planSHA, prepVersion = "study-s01-round2", s01.Round2ScopeSHA256, 2
+		indexVersion, stockVersion = "s01-round2-input-index-v0.1", "s01-round2-stock-input-v0.1"
+		reportVersion, reportPrefix, matrixPrefix, bookPrefix = "s01-round2-study-v0.1", "s01-r2-study", "s01-r2-cases", "s01-r2-book"
+		models = append(models, "R2-P0", "R2-P1", "R2-P2")
+	}
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "指標索引/入力manifest/期間計画をhash固定した研究manifest")
 	phase := fs.String("phase", "development", "development / holdout。holdoutは固定したfreeze必須")
@@ -156,7 +173,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	var prep s01InputManifest
-	if strictJSON(prepRaw, &prep) != nil || prep.Version != 1 || prep.PlanSHA != s01.PlanSHA256 {
+	if strictJSON(prepRaw, &prep) != nil || prep.Version != prepVersion || prep.PlanSHA != planSHA {
 		return errors.New("固定したS01準備条件を確認してください")
 	}
 	prepPath := resolve(m.Preparation)
@@ -169,7 +186,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	var idx s01InputIndex
-	if strictJSON(iRaw, &idx) != nil || idx.Version != "s01-input-index-v0.1" || idx.PlanSHA != prep.PlanSHA || idx.ManifestSHA != m.PreparationSHA || idx.UniverseSHA != prep.UniverseSHA || idx.NormalizationSHA != prep.NormalizationSHA || idx.ReconciliationSHA != prep.ReconciliationSHA || idx.Quality || idx.NewPNL || idx.TradingEligible {
+	if strictJSON(iRaw, &idx) != nil || idx.Version != indexVersion || idx.PlanSHA != prep.PlanSHA || idx.ManifestSHA != m.PreparationSHA || idx.UniverseSHA != prep.UniverseSHA || idx.NormalizationSHA != prep.NormalizationSHA || idx.ReconciliationSHA != prep.ReconciliationSHA || idx.Quality || idx.NewPNL || idx.TradingEligible {
 		return errors.New("準備条件と一致する未昇格の指標索引を確認してください")
 	}
 	uRaw, err := pinnedInput(prepResolve(prep.Universe), prep.UniverseSHA)
@@ -237,11 +254,21 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	parts, err := studyPeriods(pRaw, sessions)
+	periods := studyPeriods
+	if round2 {
+		if prep.PeriodSHA != m.PeriodSHA {
+			return errors.New("指標準備と比較の固定期間が一致しません")
+		}
+		if _, err := pinnedInput(prepResolve(prep.Period), m.PeriodSHA); err != nil {
+			return err
+		}
+		periods = round2Periods
+	}
+	parts, err := periods(pRaw, sessions)
 	if err != nil {
 		return err
 	}
-	if idx.Cases != 5400 || len(expected) != 5400 || len(idx.Files) != len(u.Universe.Union) {
+	if idx.Cases != len(sessions)*30 || len(expected) != len(sessions)*30 || len(idx.Files) != len(u.Universe.Union) {
 		return errors.New("全日付/銘柄の指標行列を確認してください")
 	}
 	development := append(append([]string{}, parts["train"]...), parts["validation"]...)
@@ -249,12 +276,16 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 	displayPart := "validation"
 	freezeSHA := ""
 	if *phase == "holdout" {
-		freezeSHA, err = checkStudyFreeze(*freeze, raw)
+		if round2 {
+			freezeSHA, err = checkRound2Freeze(*freeze, raw)
+		} else {
+			freezeSHA, err = checkStudyFreeze(*freeze, raw)
+		}
 		if err != nil {
 			return err
 		}
 		revision, _ := studyBuildIdentity()
-		if err := reserveStudyOpening(freezeSHA, hash(raw), revision); err != nil {
+		if err := reserveStudyOpeningMode(freezeSHA, hash(raw), revision, round2); err != nil {
 			return err
 		}
 		development = append([]string{}, parts["holdout"]...)
@@ -266,12 +297,17 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		allowed[date] = true
 	}
 	r := studyReport{Version: "s01-comparative-study-v0.1", Phase: *phase, ManifestSHA: hash(raw), PlanSHA: prep.PlanSHA, IndicatorsSHA: m.IndicatorsSHA, PeriodSHA: m.PeriodSHA, Sessions: development, Matrices: []studyArtifact{}, Books: []studyBook{}, NewPNL: true, Limitations: []string{"development_and_validation_only_no_holdout_pnl", "all_original_missing_cases_retained", "same_provider_price_diagnostic_not_execution_proof", "research_capital_400000_not_live_limits", "no_real_orders_or_inventory_claim", "all_cost_scenarios_preserved_no_best_scenario_selection"}}
+	r.Version = reportVersion
+	if round2 {
+		r.Limitations = append(r.Limitations, "retrospective_2025_not_prospective_forward", "native_common_means_legacy_five_or_new_three_separately", "all_eight_and_legacy_s01_candidate_pair_common_books_reported_separately", "round2_gate_only_for_native_cohort_new_candidates_not_legacy_quality_promotion", "ordinary_margin_short_inventory_and_actual_friction_unverified")
+	}
 	r.FreezeSHA = freezeSHA
 	r.HoldoutRead = *phase == "holdout"
 	if r.HoldoutRead {
 		r.Limitations[0] = "one_frozen_holdout_version_no_retuning"
 	}
 	modelCases := map[string][]researchbook.Case{}
+	cohorts := map[string]round2Cohorts{}
 	seen := map[string]bool{}
 	stockSeen := map[string]bool{}
 	for _, file := range idx.Files {
@@ -287,7 +323,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		var stock s01StockInputs
-		if strictJSON(sRaw, &stock) != nil || stock.Symbol != file.Symbol || stock.Version != "s01-stock-input-v0.1" || stock.PlanSHA != prep.PlanSHA || stock.UniverseSHA != prep.UniverseSHA || stock.Quality || stock.NewPNL || stock.TradingEligible || len(stock.Cases) != file.Cases {
+		if strictJSON(sRaw, &stock) != nil || stock.Symbol != file.Symbol || stock.Version != stockVersion || stock.PlanSHA != prep.PlanSHA || stock.UniverseSHA != prep.UniverseSHA || stock.Quality || stock.NewPNL || stock.TradingEligible || len(stock.Cases) != file.Cases {
 			return errors.New("未昇格の銘柄別指標を確認してください")
 		}
 		monthly := []marketdata.Dataset{}
@@ -316,7 +352,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		for _, d := range joined.Days {
 			days[d.Date] = d
 		}
-		matrix := studyMatrix{Version: r.Version, Symbol: stock.Symbol, InputSHA: file.SHA, Models: studyModels, Rows: []studyMatrixRow{}, NewPNL: true}
+		matrix := studyMatrix{Version: r.Version, Symbol: stock.Symbol, InputSHA: file.SHA, Models: models, Rows: []studyMatrixRow{}, NewPNL: true}
 		matrix.HoldoutRead = r.HoldoutRead
 		for _, c := range stock.Cases {
 			key := c.Date + "/" + stock.Symbol
@@ -343,13 +379,20 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 			if err != nil {
 				return err
 			}
-			rows := []researchbook.Case{{Date: c.Date, Symbol: stock.Symbol, Rank: c.LiquidityRank, Status: "unevaluable", Reasons: append(append([]string{}, c.Problems...), c.ExPostIssues...)}}
-			if c.InputsAvailable {
-				if c.Opening.Target.Range == nil || c.Opening.RelativeVolume == nil || !c.Opening.CalculationAvailable || c.ATR.StopDistance == nil || !c.ATR.Available || c.ATR.Symbol != stock.Symbol || c.ATR.Date != c.Date || c.Opening.Symbol != stock.Symbol || c.Opening.Target.Date != c.Date {
+			legacy := c
+			if round2 {
+				legacy, err = round2LegacyInput(c)
+				if err != nil {
+					return err
+				}
+			}
+			rows := []researchbook.Case{{Date: c.Date, Symbol: stock.Symbol, Rank: c.LiquidityRank, Status: "unevaluable", Reasons: append(append([]string{}, legacy.Problems...), c.ExPostIssues...)}}
+			if legacy.InputsAvailable {
+				if legacy.Opening.Target.Range == nil || legacy.Opening.RelativeVolume == nil || !legacy.Opening.CalculationAvailable || c.ATR.StopDistance == nil || !c.ATR.Available || c.ATR.Symbol != stock.Symbol || c.ATR.Date != c.Date || legacy.Opening.Symbol != stock.Symbol || legacy.Opening.Target.Date != c.Date {
 					return errors.New("計算可能なS01指標の内容を確認してください")
 				}
-				o := c.Opening.Target.Range
-				result, err := backtests01.DiagnoseJQuants(ctx, subset, c.Date, ref, s01.Range{Open: o.Open, High: o.High, Low: o.Low, Close: o.Close}, *c.ATR.StopDistance, *c.Opening.RelativeVolume)
+				o := legacy.Opening.Target.Range
+				result, err := backtests01.DiagnoseJQuants(ctx, subset, c.Date, ref, s01.Range{Open: o.Open, High: o.High, Low: o.Low, Close: o.Close}, *c.ATR.StopDistance, *legacy.Opening.RelativeVolume)
 				if err != nil {
 					return err
 				}
@@ -381,17 +424,40 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 					rows = append(rows, row)
 				}
 			}
+			if round2 {
+				for _, id := range models[5:] {
+					row, err := round2PriceCase(ctx, subset, c, ref, id)
+					if err != nil {
+						return err
+					}
+					rows = append(rows, row)
+				}
+			}
 			common := true
 			for _, row := range rows {
 				common = common && row.Status != "unevaluable"
 			}
+			var cohort *round2Cohorts
+			if round2 {
+				value, err := round2CaseCohorts(rows)
+				if err != nil {
+					return err
+				}
+				cohorts[key], cohort = value, &value
+			}
 			for i := range rows {
 				rows[i].Common = common
-				modelCases[studyModels[i]] = append(modelCases[studyModels[i]], rows[i])
+				if round2 {
+					rows[i].Common = cohort.Legacy
+					if i >= 5 {
+						rows[i].Common = cohort.New
+					}
+				}
+				modelCases[models[i]] = append(modelCases[models[i]], rows[i])
 			}
-			matrix.Rows = append(matrix.Rows, studyMatrixRow{Date: c.Date, Rank: c.LiquidityRank, Window: window, Models: rows, PriorActions: c.PriorVolumeActionDates})
+			matrix.Rows = append(matrix.Rows, studyMatrixRow{Date: c.Date, Rank: c.LiquidityRank, Window: window, Models: rows, PriorActions: c.PriorVolumeActionDates, Cohorts: cohort})
 		}
-		path, body, err := saveContentAddressed("study-cases", matrix)
+		path, body, err := saveContentAddressed(matrixPrefix, matrix)
 		if err != nil {
 			return err
 		}
@@ -400,7 +466,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 	if len(seen) != len(expected) {
 		return errors.New("比較行列に日付/銘柄の不足があります")
 	}
-	for _, model := range studyModels {
+	for _, model := range models {
 		if len(modelCases[model]) != len(development)*30 {
 			return errors.New("開発/検証の完全な行列を確認してください")
 		}
@@ -414,43 +480,71 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		for _, partition := range enabledParts {
 			selected := []researchbook.Case{}
 			for _, c := range modelCases[model] {
-				if c.Date >= fixedPartitions[partition].From && c.Date <= fixedPartitions[partition].To {
+				if c.Date >= parts[partition][0] && c.Date <= parts[partition][len(parts[partition])-1] {
 					selected = append(selected, c)
 				}
 			}
-			for _, common := range []bool{false, true} {
-				for _, bps := range []int64{0, 5, 10, 20} {
-					for _, commission := range []string{"sor_conditional_zero", "non_sor_standard"} {
-						for _, extra := range []int64{0, 100, 500} {
-							report, err := researchbook.Run(ctx, selected, sessions, parts[partition], researchbook.Scenario{CommonOnly: common, FrictionBPS: bps, Commission: commission, ShortExtra: extra})
-							if err != nil {
-								return err
+			comparisonCohorts := []string{""}
+			if round2 {
+				comparisonCohorts = round2BookCohorts(model)
+			}
+			for _, cohortName := range comparisonCohorts {
+				cohortSelected := selected
+				if round2 && cohortName != "native" {
+					cohortSelected = round2SelectCohort(selected, cohorts, cohortName)
+				}
+				for _, common := range []bool{false, true} {
+					if round2 && cohortName != "native" && !common {
+						continue
+					}
+					for _, bps := range []int64{0, 5, 10, 20} {
+						for _, commission := range []string{"sor_conditional_zero", "non_sor_standard"} {
+							for _, extra := range []int64{0, 100, 500} {
+								report, err := researchbook.Run(ctx, cohortSelected, sessions, parts[partition], researchbook.Scenario{CommonOnly: common, FrictionBPS: bps, Commission: commission, ShortExtra: extra})
+								if err != nil {
+									return err
+								}
+								path, body, err := saveContentAddressed(bookPrefix, report)
+								if err != nil {
+									return err
+								}
+								report.Ledger = nil
+								book := studyBook{Model: model, Partition: partition, Artifact: studyArtifact{path, hash(body)}, Summary: report}
+								if round2 {
+									book.Cohort = cohortName
+									if cohortName == "native" && strings.HasPrefix(model, "R2-") {
+										gate, err := round2Gate(report)
+										if err != nil {
+											return err
+										}
+										book.Round2Gate = &gate
+									}
+								}
+								r.Books = append(r.Books, book)
 							}
-							path, body, err := saveContentAddressed("study-book", report)
-							if err != nil {
-								return err
-							}
-							report.Ledger = nil
-							r.Books = append(r.Books, studyBook{model, partition, studyArtifact{path, hash(body)}, report})
 						}
 					}
 				}
 			}
 		}
 	}
-	path, body, err := save("s01-study", r)
+	path, body, err := save(reportPrefix, r)
 	if err != nil {
 		return err
 	}
-	record, err := recordRun("study-s01", filepath.Base(*input), raw, hash(raw), path, body, map[string]any{"manifest": m, "phase": *phase, "final_freeze_sha256": r.FreezeSHA})
+	record, err := recordRun(command, filepath.Base(*input), raw, hash(raw), path, body, map[string]any{"manifest": m, "phase": *phase, "final_freeze_sha256": r.FreezeSHA})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "S01比較: phase=%s / sessions=%d / model_cases=%d / books=%d / holdout_pnl_read=%t / strategy_adopted=false\n", *phase, len(development), len(development)*30*5, len(r.Books), r.HoldoutRead)
+	fmt.Fprintf(out, "S01比較: phase=%s / sessions=%d / model_cases=%d / books=%d / holdout_pnl_read=%t / strategy_adopted=false\n", *phase, len(development), len(development)*30*len(models), len(r.Books), r.HoldoutRead)
 	for _, b := range r.Books {
 		if b.Partition == displayPart && !b.Summary.Scenario.CommonOnly && b.Summary.Scenario.FrictionBPS == 10 && b.Summary.Scenario.ShortExtra == 0 {
 			net := formatStudyMoney(b.Summary.AfterData)
-			fmt.Fprintf(out, "検証: model=%s / commission=%s / short_extra=0 / friction_bp=10 / executed=%d / common=%d/%d / after_data_jpy=%s / gate=%s\n", b.Model, b.Summary.Scenario.Commission, b.Summary.Executed, b.Summary.Common, b.Summary.Cases, net, b.Summary.Decision)
+			decision := b.Summary.Decision
+			if b.Round2Gate != nil {
+				decision = b.Round2Gate.Decision
+			}
+			fmt.Fprintf(out, "検証: model=%s / commission=%s / short_extra=0 / friction_bp=10 / executed=%d / common=%d/%d / after_data_jpy=%s / gate=%s\n", b.Model, b.Summary.Scenario.Commission, b.Summary.Executed, b.Summary.Common, b.Summary.Cases, net, decision)
 		}
 	}
 	_, err = fmt.Fprintf(out, "保存: %s\n実行記録: %s\n", path, record)
