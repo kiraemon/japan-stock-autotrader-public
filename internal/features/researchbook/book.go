@@ -164,11 +164,12 @@ func Run(ctx context.Context, cases []Case, allSessions, partition []string, s S
 
 const Morning30 = "0930-1000-next-minute-open"
 const Morning29 = "0901-0930-next-minute-open"
+const Morning30VWAP = "0930-before1000-vwap-next-minute-open"
 
 // RunTimedMorning changes only the fixed replay-clock contract. Accounting,
 // capacity and cost/gates are shared with Run. It is not a generic live window.
 func RunTimedMorning(ctx context.Context, cases []Case, allSessions, partition []string, s Scenario, clock string) (Report, error) {
-	if clock != Morning30 && clock != Morning29 {
+	if clock != Morning30 && clock != Morning29 && clock != Morning30VWAP {
 		return Report{}, errors.New("固定した朝の価格再生時刻を確認してください")
 	}
 	return run(ctx, cases, allSessions, partition, s, clock)
@@ -244,6 +245,9 @@ func run(ctx context.Context, cases []Case, allSessions, partition []string, s S
 			}
 			if clock == Morning29 {
 				clockOK = t.EntryAt.Equal(marketdata.Clock(c.Date, 9, 1)) && t.ExitAt.Equal(marketdata.Clock(c.Date, 9, 30))
+			}
+			if clock == Morning30VWAP {
+				clockOK = t.EntryAt.Equal(marketdata.Clock(c.Date, 9, 30)) && t.ExitAt.After(t.EntryAt) && !t.ExitAt.After(marketdata.Clock(c.Date, 10, 0))
 			}
 			if (t.Direction != "long" && t.Direction != "short") || t.EntryPrice <= 0 || t.EntryPrice > marketdata.MaxPrice || t.ExitPrice <= 0 || t.ExitPrice > marketdata.MaxPrice || marketdata.Date(t.EntryAt) != c.Date || marketdata.Date(t.ExitAt) != c.Date || !clockOK || !t.EntryAt.Equal(t.EntryAt.Truncate(time.Minute)) || !t.ExitAt.Equal(t.ExitAt.Truncate(time.Minute)) {
 				return fail()

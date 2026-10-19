@@ -16,6 +16,28 @@ func standard() Scenario {
 	return Scenario{FrictionBPS: 10, Commission: "non_sor_standard", ShortExtra: 100}
 }
 
+func TestVWAPMorningClockIsSeparateAndBounded(t *testing.T) {
+	c := testTrade("0000@1", 1, 30, 5000, 5050)
+	for _, minute := range []int{31, 59, 60} {
+		c.Trade.ExitAt = marketdata.Clock(c.Date, 9, minute)
+		r, err := RunTimedMorning(context.Background(), []Case{c}, []string{c.Date}, []string{c.Date}, standard(), Morning30VWAP)
+		if err != nil || r.Executed != 1 || r.Net != "3878" {
+			t.Fatal("VWAP clock/accounting", err)
+		}
+		if minute != 60 {
+			if _, err := RunTimedMorning(context.Background(), []Case{c}, []string{c.Date}, []string{c.Date}, standard(), Morning30); err == nil {
+				t.Fatal("legacy clock relaxed")
+			}
+		}
+	}
+	for _, minute := range []int{30, 61} {
+		c.Trade.ExitAt = marketdata.Clock(c.Date, 9, minute)
+		if _, err := RunTimedMorning(context.Background(), []Case{c}, []string{c.Date}, []string{c.Date}, standard(), Morning30VWAP); err == nil {
+			t.Fatal("exit outside fixed window admitted")
+		}
+	}
+}
+
 func TestFixedMorningWindowsShareCostsWithoutRelaxingLegacy(t *testing.T) {
 	for _, clock := range []string{Morning30, Morning29} {
 		a := testTrade("0000@1", 1, 30, 5000, 5050)
