@@ -76,6 +76,7 @@ type studyBook struct {
 	Summary    researchbook.Report `json:"summary"`
 	Cohort     string              `json:"comparison_cohort,omitempty"`
 	Round2Gate *round2GateReport   `json:"round2_candidate_gate,omitempty"`
+	Round3Gate *round3GateReport   `json:"round3_candidate_gate,omitempty"`
 }
 type studyReport struct {
 	Version       string          `json:"version"`

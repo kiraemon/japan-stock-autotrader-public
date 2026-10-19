@@ -152,12 +152,26 @@ func Check(ctx context.Context, d marketdata.Dataset, date string, previous []st
 // CheckWithPolicy keeps the strict legacy default. The optional provider policy
 // is a research assumption, not proof of coverage, delayed auction, or fills.
 func CheckWithPolicy(ctx context.Context, d marketdata.Dataset, date string, previous []string, policy string) (Report, error) {
+	return checkWithPolicy(ctx, d, date, previous, policy, false)
+}
+
+// CheckTurnoverJQuants retains the original prefix policy, including incomplete
+// whole historical openings. It does not apply the round-two zero-volume rule.
+func CheckTurnoverJQuants(ctx context.Context, d marketdata.Dataset, date string, previous []string) (Report, error) {
+	return checkWithPolicy(ctx, d, date, previous, JQuantsPrefixPolicy, true)
+}
+
+func checkWithPolicy(ctx context.Context, d marketdata.Dataset, date string, previous []string, policy string, turnover bool) (Report, error) {
 	r := Report{Version: Version, Scope: "opening_volume_input_diagnostic_only", Symbol: d.Symbol, Origin: d.Origin, Source: d.Source, PriceScale: marketdata.PriceScale, AsOf: marketdata.Clock(date, 9, 5), Previous: []Opening{}, MissingPrevious: []string{}, Problems: []string{}}
 	if policy != "" && policy != JQuantsPrefixPolicy {
 		return r, errors.New("寄り付き入力方針を確認してください")
 	}
 	if policy != "" {
-		if d.Origin != "observed" || d.Environment != "production" || (d.Source.Format != "jquants-bulk-minute-v0.1" && d.Source.Format != marketdata.JQuantsJoinedFormat) || d.Source.Label != "start" {
+		formatOK := d.Source.Format == "jquants-bulk-minute-v0.1" || d.Source.Format == marketdata.JQuantsJoinedFormat
+		if turnover {
+			formatOK = marketdata.IsJQuantsTurnover(d.Source.Format)
+		}
+		if d.Origin != "observed" || d.Environment != "production" || !formatOK || d.Source.Label != "start" {
 			return r, errors.New("無約定を仮定する入力は正規化済みJ-Quants一括分足に限定しています")
 		}
 		r.Version, r.OpeningPolicy, r.SourceContractAssumed = PolicyVersion, policy, true

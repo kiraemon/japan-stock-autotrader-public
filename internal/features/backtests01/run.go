@@ -56,7 +56,13 @@ func Run(ctx context.Context, d marketdata.Dataset, date string, opening s01.Ran
 // than accepting an external eligibility flag. The supplied RVOL is the pinned
 // preparation result, not a future-volume filter. No quality flag is promoted.
 func DiagnoseJQuants(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string) (Report, error) {
-	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, stopDistance, rvol, nil)
+	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, stopDistance, rvol, nil, false)
+}
+
+// DiagnoseTurnoverJQuants uses the additional Va contract without changing the
+// original S01 price/RVOL/stop rules or accepting an external quality flag.
+func DiagnoseTurnoverJQuants(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string) (Report, error) {
+	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, stopDistance, rvol, nil, true)
 }
 
 // DiagnoseRound2 has exactly three predeclared research policies. Input I/O,
@@ -70,11 +76,15 @@ func DiagnoseRound2(ctx context.Context, d marketdata.Dataset, date string, dail
 	if err != nil {
 		return Report{}, err
 	}
-	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, distance, rvol, &p)
+	return diagnoseJQuantsPolicy(ctx, d, date, daily, opening, distance, rvol, &p, false)
 }
 
-func diagnoseJQuantsPolicy(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string, policy *s01.Round2Policy) (Report, error) {
-	check, err := marketdata.CheckJQuantsWindow(ctx, d, date, daily)
+func diagnoseJQuantsPolicy(ctx context.Context, d marketdata.Dataset, date string, daily marketdata.DailyBar, opening s01.Range, stopDistance int64, rvol string, policy *s01.Round2Policy, turnover bool) (Report, error) {
+	inspect := marketdata.CheckJQuantsWindow
+	if turnover {
+		inspect = marketdata.CheckJQuantsTurnoverWindow
+	}
+	check, err := inspect(ctx, d, date, daily)
 	if err != nil {
 		return Report{}, err
 	}

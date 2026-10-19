@@ -92,6 +92,7 @@ type Report struct {
 	TradingEligible      bool              `json:"trading_eligible"`
 	StrategyAdopted      bool              `json:"strategy_adopted"`
 	BorrowingVerified    bool              `json:"borrowing_inventory_verified"`
+	ReplayClock          string            `json:"fixed_morning_price_clock,omitempty"`
 }
 
 var symbolPattern = regexp.MustCompile(`^[0-9A-Z]{4}@1$`)
@@ -158,7 +159,24 @@ func quote(t Trade, s Scenario) Costs {
 // from the complete study calendar, reported separately from broker equity.
 // Missing cases stay in coverage counts. CommonOnly changes only book inputs.
 func Run(ctx context.Context, cases []Case, allSessions, partition []string, s Scenario) (Report, error) {
+	return run(ctx, cases, allSessions, partition, s, "")
+}
+
+const Morning30 = "0930-1000-next-minute-open"
+const Morning29 = "0901-0930-next-minute-open"
+
+// RunTimedMorning changes only the fixed replay-clock contract. Accounting,
+// capacity and cost/gates are shared with Run. It is not a generic live window.
+func RunTimedMorning(ctx context.Context, cases []Case, allSessions, partition []string, s Scenario, clock string) (Report, error) {
+	if clock != Morning30 && clock != Morning29 {
+		return Report{}, errors.New("固定した朝の価格再生時刻を確認してください")
+	}
+	return run(ctx, cases, allSessions, partition, s, clock)
+}
+
+func run(ctx context.Context, cases []Case, allSessions, partition []string, s Scenario, clock string) (Report, error) {
 	r := Report{Version: Version, Scenario: s, StartEquity: "400000", SymbolNet: map[string]string{}, GateReasons: []string{}, Ledger: []Entry{}, Limitations: []string{"research_assumptions_not_real_risk_limits", "quantity_100_lot_100_margin_30pct_minimum_300000_jpy", "partition_equity_reset_400000_jpy", "one_position_realized_equity_only_exits_before_same_timestamp_entries", "entry_fee_reserve_uses_entry_not_future_exit_notional", "one_day_365_basis_credit_ceil_yen_final_broker_rounding_unverified", "friction_entry_notional_once_per_round_trip", "data_fee_external_to_broker_equity", "same_provider_price_diagnostic_not_actual_fill_proof", "sor_eligibility_borrowing_inventory_and_short_extra_costs_unverified", "drawdown_realized_only_not_intratrade_mark_to_market", "leave_best_out_arithmetic_of_executed_book_no_freed_capacity_replay"}}
+	r.ReplayClock = clock
 	fail := func() (Report, error) {
 		return r, errors.New("研究ブックのケース・時系列・固定した資金/費用条件を確認してください")
 	}
@@ -220,7 +238,14 @@ func Run(ctx context.Context, cases []Case, allSessions, partition []string, s S
 		}
 		if c.Trade != nil {
 			t := c.Trade
-			if (t.Direction != "long" && t.Direction != "short") || t.EntryPrice <= 0 || t.EntryPrice > marketdata.MaxPrice || t.ExitPrice <= 0 || t.ExitPrice > marketdata.MaxPrice || marketdata.Date(t.EntryAt) != c.Date || marketdata.Date(t.ExitAt) != c.Date || !t.ExitAt.After(t.EntryAt) || t.ExitAt.Sub(t.EntryAt) > 20*time.Minute || t.EntryAt.Before(marketdata.Clock(c.Date, 9, 6)) || t.EntryAt.After(marketdata.Clock(c.Date, 10, 30)) || t.ExitAt.After(marketdata.Clock(c.Date, 10, 50)) || !t.EntryAt.Equal(t.EntryAt.Truncate(time.Minute)) || !t.ExitAt.Equal(t.ExitAt.Truncate(time.Minute)) {
+			clockOK := t.ExitAt.After(t.EntryAt) && t.ExitAt.Sub(t.EntryAt) <= 20*time.Minute && !t.EntryAt.Before(marketdata.Clock(c.Date, 9, 6)) && !t.EntryAt.After(marketdata.Clock(c.Date, 10, 30)) && !t.ExitAt.After(marketdata.Clock(c.Date, 10, 50))
+			if clock == Morning30 {
+				clockOK = t.EntryAt.Equal(marketdata.Clock(c.Date, 9, 30)) && t.ExitAt.Equal(marketdata.Clock(c.Date, 10, 0))
+			}
+			if clock == Morning29 {
+				clockOK = t.EntryAt.Equal(marketdata.Clock(c.Date, 9, 1)) && t.ExitAt.Equal(marketdata.Clock(c.Date, 9, 30))
+			}
+			if (t.Direction != "long" && t.Direction != "short") || t.EntryPrice <= 0 || t.EntryPrice > marketdata.MaxPrice || t.ExitPrice <= 0 || t.ExitPrice > marketdata.MaxPrice || marketdata.Date(t.EntryAt) != c.Date || marketdata.Date(t.ExitAt) != c.Date || !clockOK || !t.EntryAt.Equal(t.EntryAt.Truncate(time.Minute)) || !t.ExitAt.Equal(t.ExitAt.Truncate(time.Minute)) {
 				return fail()
 			}
 		}

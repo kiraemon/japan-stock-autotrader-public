@@ -153,6 +153,10 @@ func reserveStudyOpeningMode(freezeSHA, manifestSHA, revision string, round2 boo
 	if round2 {
 		path = filepath.Join("data", "research", "s01-r2-holdout-opening-20261019.json")
 	}
+	return reserveStudyOpeningAt(path, freezeSHA, manifestSHA, revision)
+}
+
+func reserveStudyOpeningAt(path, freezeSHA, manifestSHA, revision string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return errors.New("最終評価の開封記録先を確認できません")
 	}

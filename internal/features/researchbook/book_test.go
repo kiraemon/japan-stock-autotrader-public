@@ -15,6 +15,33 @@ func testTrade(symbol string, rank, minute int, entry, exit int64) Case {
 func standard() Scenario {
 	return Scenario{FrictionBPS: 10, Commission: "non_sor_standard", ShortExtra: 100}
 }
+
+func TestFixedMorningWindowsShareCostsWithoutRelaxingLegacy(t *testing.T) {
+	for _, clock := range []string{Morning30, Morning29} {
+		a := testTrade("0000@1", 1, 30, 5000, 5050)
+		if clock == Morning30 {
+			a.Trade.EntryAt = marketdata.Clock(a.Date, 9, 30)
+			a.Trade.ExitAt = marketdata.Clock(a.Date, 10, 0)
+		} else {
+			a.Trade.EntryAt = marketdata.Clock(a.Date, 9, 1)
+			a.Trade.ExitAt = marketdata.Clock(a.Date, 9, 30)
+		}
+		b := a
+		b.Symbol = "0001@1"
+		b.Rank = 2
+		r, err := RunTimedMorning(context.Background(), []Case{b, a}, []string{a.Date}, []string{a.Date}, standard(), clock)
+		if err != nil || r.Executed != 1 || r.Busy != 1 || r.Net != "3878" || r.ReplayClock != clock || r.TradingEligible || r.BorrowingVerified {
+			t.Fatal("morning book costs/capacity", err)
+		}
+		if _, err := Run(context.Background(), []Case{a}, []string{a.Date}, []string{a.Date}, standard()); err == nil {
+			t.Fatal("legacy clock relaxed")
+		}
+		a.Trade.ExitAt = a.Trade.ExitAt.AddDate(0, 0, 1)
+		if _, err := RunTimedMorning(context.Background(), []Case{a}, []string{a.Date}, []string{a.Date}, standard(), clock); err == nil {
+			t.Fatal("fixed morning allowed another exit")
+		}
+	}
+}
 func TestCostsCommissionBandsAndEntryOnlyReserve(t *testing.T) {
 	c := testTrade("0000@1", 1, 6, 5000, 5050)
 	r, err := Run(context.Background(), []Case{c}, []string{c.Date}, []string{c.Date}, standard())
