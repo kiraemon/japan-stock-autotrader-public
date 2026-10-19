@@ -10,3 +10,5 @@ examples/research/s01-round2-periods.plan.json text eol=lf
 examples/research/s01-round2-universe.plan.json text eol=lf
 examples/research/round3-scope.plan.json text eol=lf
 examples/research/round3-periods.plan.json text eol=lf
+examples/research/round3-validation-universe.plan.json text eol=lf
+examples/research/round3-holdout-universe.plan.json text eol=lf

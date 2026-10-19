@@ -10,6 +10,28 @@ import (
 
 const tradedRow = "2026-06-02,00000,100,103,99,101,0,0,100,10050.5,0.5,,1\n"
 
+func TestExtendedDailyHistoryHasExplicitNovemberBoundary(t *testing.T) {
+	row := strings.Replace(tradedRow, "2026-06-02", "2024-11-01", 1)
+	if _, err := ReadDaily(context.Background(), strings.NewReader(dailyHeader+"\n"+row), "2024-11"); err == nil {
+		t.Fatal("legacy daily boundary changed")
+	}
+	d, err := ReadDailyHistory(context.Background(), strings.NewReader(dailyHeader+"\n"+row), "2024-11")
+	if err != nil || len(d) != 1 || d[0].Date != "2024-11-01" || d[0].Turnover != "20101/2" {
+		t.Fatal("November daily lost", err)
+	}
+	master := masterHeader + "\n2024-11-01,00000,synthetic,synthetic,1,a,2,b,none,0111,Prime,2,loan,011\n"
+	if _, err := ReadListings(context.Background(), strings.NewReader(master), "2024-11"); err == nil {
+		t.Fatal("legacy master boundary changed")
+	}
+	list, err := ReadListingsHistory(context.Background(), strings.NewReader(master), "2024-11")
+	if err != nil || len(list) != 1 {
+		t.Fatal("November listing lost", err)
+	}
+	if _, err := ReadDailyHistory(context.Background(), strings.NewReader(strings.ReplaceAll(dailyHeader+"\n"+row, "2024-11", "2024-10")), "2024-10"); err == nil {
+		t.Fatal("unsupported month admitted")
+	}
+}
+
 func TestDailyNumbersNullSemanticsAndCorporateActionFields(t *testing.T) {
 	rows, err := ReadDaily(context.Background(), strings.NewReader(dailyHeader+"\n"+tradedRow+"2026-06-01,00000,,,,,0,0,,,1,,\n"), "2026-06")
 	if err != nil || len(rows) != 2 {

@@ -27,6 +27,7 @@ type JQuantsWindow struct {
 	Missing         []string `json:"missing_minutes_jst"`
 	LeadingAssumed  []string `json:"leading_minutes_assumed_no_trades"`
 	DailyMatch      bool     `json:"same_provider_daily_ohlcv_match"`
+	TurnoverMatch   *bool    `json:"same_provider_daily_turnover_match,omitempty"`
 	Eligible        bool     `json:"eligible_for_price_diagnostic"`
 	Reasons         []string `json:"reasons"`
 	OriginalIssues  []string `json:"original_day_issues"`
@@ -41,8 +42,24 @@ type JQuantsWindow struct {
 // Only a leading absence ending by 09:04 follows the already explicit provider
 // no-trades assumption; no rows are filled or added to the caller's data.
 func CheckJQuantsWindow(ctx context.Context, d Dataset, date string, daily DailyBar) (JQuantsWindow, error) {
+	return checkJQuantsWindow(ctx, d, date, daily, false)
+}
+
+// CheckJQuantsTurnoverWindow additionally reconciles original Va with daily Va;
+// callers cannot relabel this extended contract as the legacy OHLCV source.
+func CheckJQuantsTurnoverWindow(ctx context.Context, d Dataset, date string, daily DailyBar) (JQuantsWindow, error) {
+	return checkJQuantsWindow(ctx, d, date, daily, true)
+}
+
+func checkJQuantsWindow(ctx context.Context, d Dataset, date string, daily DailyBar, turnover bool) (JQuantsWindow, error) {
 	r := JQuantsWindow{Version: JQuantsWindowVersion, Date: date, Symbol: d.Symbol, Source: d.Source, WindowStart: "09:00", WindowLast: "10:50", Required: 111, Missing: []string{}, LeadingAssumed: []string{}, Reasons: []string{}, OriginalIssues: []string{}, Limitations: []string{"ex_post_input_check_not_pretrade_information", "same_provider_daily_aggregation_not_independent_verification", "leading_absence_assumed_no_trades_only_in_opening_prefix", "full_fixed_window_required_independent_of_trade_result", "unadjusted_prices_and_volume", "minute_open_fills_and_intrabar_stop_prices_assumed", "historical_receive_times_trade_status_inventory_and_actual_fills_unverified"}}
-	if Validate(d) != nil || d.Origin != "observed" || d.Environment != "production" || d.Source.Label != "start" || (d.Source.Format != "jquants-bulk-minute-v0.1" && d.Source.Format != JQuantsJoinedFormat) || !strings.HasSuffix(d.Symbol, "@1") {
+	formatOK := d.Source.Format == "jquants-bulk-minute-v0.1" || d.Source.Format == JQuantsJoinedFormat
+	if turnover {
+		formatOK = IsJQuantsTurnover(d.Source.Format)
+		r.Version = "jquants-turnover-daily-matched-fixed-window-v0.1"
+		r.Limitations = append(r.Limitations, "original_turnover_exact_not_typical_price_approximation")
+	}
+	if Validate(d) != nil || d.Origin != "observed" || d.Environment != "production" || d.Source.Label != "start" || !formatOK || !strings.HasSuffix(d.Symbol, "@1") {
 		return r, errors.New("固定窓の価格診断は未昇格のJ-Quants一括分足に限定しています")
 	}
 	at, err := time.Parse("2006-01-02", date)
@@ -105,6 +122,27 @@ func CheckJQuantsWindow(ctx context.Context, d Dataset, date string, daily Daily
 		r.DailyMatch = match
 		if !match {
 			add("same_provider_daily_ohlcv_mismatch")
+		}
+		if turnover {
+			sum := new(big.Rat)
+			for _, b := range day.Bars {
+				v, _ := new(big.Rat).SetString(b.TurnoverJPY)
+				sum.Add(sum, v)
+			}
+			for _, e := range day.Events {
+				v, _ := new(big.Rat).SetString(e.TurnoverJPY)
+				sum.Add(sum, v)
+			}
+			var expected *big.Rat
+			ok := false
+			if len(daily.Turnover) > 0 && len(daily.Turnover) <= 128 && turnoverExactPattern.MatchString(daily.Turnover) {
+				expected, ok = new(big.Rat).SetString(daily.Turnover)
+			}
+			matched := ok && expected.Sign() > 0 && sum.Cmp(expected) == 0
+			r.TurnoverMatch = &matched
+			if !matched {
+				add("same_provider_daily_turnover_mismatch")
+			}
 		}
 	}
 	byTime := map[time.Time]Bar{}

@@ -118,6 +118,21 @@ func TestUniverseCLIProvenanceStableCatalogAndSafeSummary(t *testing.T) {
 	}
 }
 
+func TestUniverseExplicitHistoryManifestAndUnknownVersion(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := universeFixture(t)
+	m.Version = 2
+	writeS01FixtureJSON(t, "inputs/manifest.json", m)
+	if err := run(context.Background(), []string{"select-universe", "-input", "inputs/manifest.json"}, &bytes.Buffer{}); err != nil {
+		t.Fatal("explicit daily history manifest", err)
+	}
+	m.Version = 3
+	writeS01FixtureJSON(t, "inputs/manifest.json", m)
+	if err := run(context.Background(), []string{"select-universe", "-input", "inputs/manifest.json"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("unknown daily history manifest admitted")
+	}
+}
+
 func TestUniverseCLIRejectsTamperedSourcesCalendarAndRules(t *testing.T) {
 	for _, fault := range []string{"source_bytes", "gzip_crc", "rule", "duplicate_calendar", "unknown_field"} {
 		t.Run(fault, func(t *testing.T) {

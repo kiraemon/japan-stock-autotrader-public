@@ -25,14 +25,15 @@ type Source struct {
 	ReceivedAt time.Time `json:"received_at"`
 }
 type Dataset struct {
-	Version     int    `json:"schema_version"`
-	PriceScale  int64  `json:"price_scale"`
-	Symbol      string `json:"symbol"`
-	Environment string `json:"environment"`
-	Origin      string `json:"origin"` // synthetic or observed; never a quality override.
-	Converter   string `json:"converter_version"`
-	Source      Source `json:"source"`
-	Days        []Day  `json:"days"`
+	Version      int               `json:"schema_version"`
+	PriceScale   int64             `json:"price_scale"`
+	Symbol       string            `json:"symbol"`
+	Environment  string            `json:"environment"`
+	Origin       string            `json:"origin"` // synthetic or observed; never a quality override.
+	Converter    string            `json:"converter_version"`
+	Source       Source            `json:"source"`
+	Days         []Day             `json:"days"`
+	ExcludedRows []SourceExclusion `json:"excluded_source_rows,omitempty"`
 }
 type Day struct {
 	Date   string   `json:"date_jst"`
@@ -41,23 +42,25 @@ type Day struct {
 	Events []Event  `json:"boundary_events"`
 }
 type Bar struct {
-	Start     time.Time `json:"start"`
-	Open      int64     `json:"open"`
-	High      int64     `json:"high"`
-	Low       int64     `json:"low"`
-	Close     int64     `json:"close"`
-	Volume    *int64    `json:"volume_shares"`
-	Issues    []string  `json:"issues"`
-	FirstRow  int       `json:"first_source_row"`
-	LastRow   int       `json:"last_source_row"`
-	FirstTime time.Time `json:"first_market_time"`
-	LastTime  time.Time `json:"last_market_time"`
+	Start       time.Time `json:"start"`
+	Open        int64     `json:"open"`
+	High        int64     `json:"high"`
+	Low         int64     `json:"low"`
+	Close       int64     `json:"close"`
+	Volume      *int64    `json:"volume_shares"`
+	Issues      []string  `json:"issues"`
+	FirstRow    int       `json:"first_source_row"`
+	LastRow     int       `json:"last_source_row"`
+	FirstTime   time.Time `json:"first_market_time"`
+	LastTime    time.Time `json:"last_market_time"`
+	TurnoverJPY string    `json:"turnover_jpy_exact,omitempty"`
 }
 type Event struct {
-	Time   time.Time `json:"time"`
-	Price  int64     `json:"price"`
-	Volume *int64    `json:"volume_shares"`
-	Row    int       `json:"source_row"`
+	Time        time.Time `json:"time"`
+	Price       int64     `json:"price"`
+	Volume      *int64    `json:"volume_shares"`
+	Row         int       `json:"source_row"`
+	TurnoverJPY string    `json:"turnover_jpy_exact,omitempty"`
 }
 
 // ParsePrice refuses rounding; comparisons use a common integer scale.
@@ -118,7 +121,7 @@ func Validate(d Dataset) error {
 			previous = b.Start
 		}
 	}
-	return nil
+	return validateTurnoverContract(d)
 }
 func ValidPrices(b Bar) bool {
 	return b.Low > 0 && b.Low <= b.Open && b.Low <= b.Close && b.High >= b.Open && b.High >= b.Close && b.High <= MaxPrice

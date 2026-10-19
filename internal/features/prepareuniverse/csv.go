@@ -61,9 +61,9 @@ func (r *lineBound) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func rows(ctx context.Context, input io.Reader, month, header string, receive func([]string) error) error {
+func rows(ctx context.Context, input io.Reader, month, header, minimumMonth string, receive func([]string) error) error {
 	at, err := time.Parse("2006-01", month)
-	if err != nil || at.Format("2006-01") != month || month < "2024-12" {
+	if err != nil || at.Format("2006-01") != month || month < minimumMonth {
 		return errors.New("日次入力のYYYY-MMを確認してください")
 	}
 	limited := &io.LimitedReader{R: input, N: (256 << 20) + 1}
@@ -106,8 +106,18 @@ func rows(ctx context.Context, input io.Reader, month, header string, receive fu
 }
 
 func ReadDaily(ctx context.Context, input io.Reader, month string) ([]marketdata.DailyBar, error) {
+	return readDaily(ctx, input, month, "2024-12")
+}
+
+// ReadDailyHistory explicitly extends the unchanged daily CSV schema back to
+// November 2024. Daily values have no intraday session-clock conversion.
+func ReadDailyHistory(ctx context.Context, input io.Reader, month string) ([]marketdata.DailyBar, error) {
+	return readDaily(ctx, input, month, "2024-11")
+}
+
+func readDaily(ctx context.Context, input io.Reader, month, minimumMonth string) ([]marketdata.DailyBar, error) {
 	result := []marketdata.DailyBar{}
-	err := rows(ctx, input, month, dailyHeader, func(row []string) error {
+	err := rows(ctx, input, month, dailyHeader, minimumMonth, func(row []string) error {
 		d := marketdata.DailyBar{Date: strings.Clone(row[0]), Code: strings.Clone(row[1])}
 		factor, err := positive(row[10])
 		if err != nil {
@@ -175,8 +185,16 @@ func ReadDaily(ctx context.Context, input io.Reader, month string) ([]marketdata
 }
 
 func ReadListings(ctx context.Context, input io.Reader, month string) ([]Listing, error) {
+	return readListings(ctx, input, month, "2024-12")
+}
+
+func ReadListingsHistory(ctx context.Context, input io.Reader, month string) ([]Listing, error) {
+	return readListings(ctx, input, month, "2024-11")
+}
+
+func readListings(ctx context.Context, input io.Reader, month, minimumMonth string) ([]Listing, error) {
 	result := []Listing{}
-	err := rows(ctx, input, month, masterHeader, func(row []string) error {
+	err := rows(ctx, input, month, masterHeader, minimumMonth, func(row []string) error {
 		result = append(result, Listing{Date: strings.Clone(row[0]), Code: strings.Clone(row[1]), Market: strings.Clone(row[9]), Product: strings.Clone(row[13]), Margin: strings.Clone(row[11])})
 		return nil
 	})

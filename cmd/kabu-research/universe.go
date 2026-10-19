@@ -171,7 +171,7 @@ func runUniverse(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	var m universeManifest
-	if strictJSON(raw, &m) != nil || m.Version != 1 || m.RuleFile == "" || len(m.RuleSHA) != 64 || len(m.DailyFiles) == 0 || len(m.DailyFiles) > 24 || len(m.MasterFiles) != len(m.DailyFiles) || len(m.CalendarFiles) != len(m.DailyFiles) {
+	if strictJSON(raw, &m) != nil || (m.Version != 1 && m.Version != 2) || m.RuleFile == "" || len(m.RuleSHA) != 64 || len(m.DailyFiles) == 0 || len(m.DailyFiles) > 24 || len(m.MasterFiles) != len(m.DailyFiles) || len(m.CalendarFiles) != len(m.DailyFiles) {
 		return errors.New("母集団manifestの版/条件/入力件数を確認してください")
 	}
 	resolve := func(path string) string { return relativeORBPath(*input, path) }
@@ -228,7 +228,11 @@ func runUniverse(ctx context.Context, args []string, out io.Writer) error {
 		for _, path := range group.paths {
 			p, err := universeCSV(ctx, resolve(path), group.kind, func(reader io.Reader, month string, captured time.Time) (int, error) {
 				if group.kind == "daily" {
-					rows, err := prepareuniverse.ReadDaily(ctx, reader, month)
+					read := prepareuniverse.ReadDaily
+					if m.Version == 2 {
+						read = prepareuniverse.ReadDailyHistory
+					}
+					rows, err := read(ctx, reader, month)
 					if err != nil {
 						return 0, err
 					}
@@ -240,7 +244,11 @@ func runUniverse(ctx context.Context, args []string, out io.Writer) error {
 					daily = append(daily, rows...)
 					return len(rows), nil
 				}
-				rows, err := prepareuniverse.ReadListings(ctx, reader, month)
+				read := prepareuniverse.ReadListings
+				if m.Version == 2 {
+					read = prepareuniverse.ReadListingsHistory
+				}
+				rows, err := read(ctx, reader, month)
 				if err != nil {
 					return 0, err
 				}

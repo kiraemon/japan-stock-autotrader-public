@@ -110,6 +110,12 @@ func jquantsDataset(ctx context.Context, d marketdata.Dataset, code, from, to st
 		if err != nil {
 			return d, err
 		}
+		if marketdata.IsJQuantsTurnover(d.Source.Format) {
+			b.TurnoverJPY, err = marketdata.ParseTurnover(string(row.Turnover))
+			if err != nil || !marketdata.ValidTurnover(b.TurnoverJPY, b.Volume, b.Low, b.High) {
+				return d, errors.New("J-Quantsの売買代金/株数/価格範囲が整合しません")
+			}
+		}
 		if days[row.Date] == nil {
 			days[row.Date] = &marketdata.Day{Date: row.Date, Issues: []string{"coverage_unverified", "trading_status_unverified", "source_crosscheck_unverified", "corporate_actions_unverified"}, Bars: []marketdata.Bar{}, Events: []marketdata.Event{}}
 		}
@@ -120,7 +126,7 @@ func jquantsDataset(ctx context.Context, d marketdata.Dataset, code, from, to st
 			if b.Open != b.Close || b.High != b.Close || b.Low != b.Close {
 				return d, errors.New("J-Quantsの板寄せ境界足を確認してください")
 			}
-			days[row.Date].Events = append(days[row.Date].Events, marketdata.Event{Time: at, Price: b.Close, Volume: b.Volume, Row: sourceRow})
+			days[row.Date].Events = append(days[row.Date].Events, marketdata.Event{Time: at, Price: b.Close, Volume: b.Volume, Row: sourceRow, TurnoverJPY: b.TurnoverJPY})
 			continue
 		}
 		if at.Add(time.Minute).After(d.Source.ReceivedAt) {

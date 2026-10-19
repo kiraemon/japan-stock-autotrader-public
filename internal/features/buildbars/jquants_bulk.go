@@ -37,11 +37,26 @@ func (r *csvLineLimit) Read(p []byte) (int, error) {
 // verifies the compressed bytes against sourceSHA and keeps the original gzip.
 // Unselected rows are structurally read but their market values are not audited.
 func FromJQuantsBulkCSV(ctx context.Context, input io.Reader, sourceSHA, month string, captured time.Time, symbols []string) ([]marketdata.Dataset, error) {
+	return fromJQuantsBulkCSV(ctx, input, sourceSHA, month, captured, symbols, false)
+}
+
+// FromJQuantsBulkCSVWithTurnover is an explicit additional contract. Selected
+// 2024-11-01 rows are counted as unsupported, never silently re-timed or filled.
+func FromJQuantsBulkCSVWithTurnover(ctx context.Context, input io.Reader, sourceSHA, month string, captured time.Time, symbols []string) ([]marketdata.Dataset, error) {
+	return fromJQuantsBulkCSV(ctx, input, sourceSHA, month, captured, symbols, true)
+}
+
+func fromJQuantsBulkCSV(ctx context.Context, input io.Reader, sourceSHA, month string, captured time.Time, symbols []string, turnover bool) ([]marketdata.Dataset, error) {
 	first, err := time.Parse("2006-01", month)
-	if err != nil || first.Format("2006-01") != month || month < "2024-12" || captured.IsZero() || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(sourceSHA) || len(symbols) == 0 || len(symbols) > 50 {
+	minimum := "2024-12"
+	if turnover {
+		minimum = "2024-11"
+	}
+	if err != nil || first.Format("2006-01") != month || month < minimum || captured.IsZero() || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(sourceSHA) || len(symbols) == 0 || len(symbols) > 50 {
 		return nil, errors.New("bulk変換の月/取得時刻/原hash/銘柄を確認してください")
 	}
 	byCode := map[string][]jqRow{}
+	excluded := map[string]int{}
 	pattern := regexp.MustCompile(`^[0-9A-Z]{4}@1$`)
 	for _, symbol := range symbols {
 		code := strings.TrimSuffix(symbol, "@1")
@@ -76,6 +91,21 @@ func FromJQuantsBulkCSV(ctx context.Context, input io.Reader, sourceSHA, month s
 		if _, ok := byCode[code]; !ok {
 			continue
 		}
+		if turnover && values[0] < "2024-11-05" {
+			if month != "2024-11" || values[0] != "2024-11-01" {
+				return nil, errors.New("売買代金付き分足の対応開始日を確認してください")
+			}
+			clock := values[1]
+			if len(clock) == 5 {
+				clock += ":00"
+			}
+			at, e := time.ParseInLocation("2006-01-02 15:04:05", values[0]+" "+clock, marketdata.JST)
+			if e != nil || !at.Equal(at.Truncate(time.Minute)) || at.After(captured) || excluded[code] >= 20000 {
+				return nil, errors.New("対象外の旧立会日の行形式/件数を確認してください")
+			}
+			excluded[code]++
+			continue
+		}
 		if len(byCode[code]) >= 20000 {
 			return nil, errors.New("bulk選択銘柄の行数上限を超えました")
 		}
@@ -93,6 +123,13 @@ func FromJQuantsBulkCSV(ctx context.Context, input io.Reader, sourceSHA, month s
 		d := dataset(nil, symbol, "production", "jquants-bulk-minute-v0.1", captured)
 		d.Source.SHA256 = sourceSHA
 		d.Converter = Version + "/jquants-bulk-v0.1"
+		if turnover {
+			d.Source.Format = marketdata.JQuantsTurnoverFormat
+			d.Converter = Version + "/jquants-bulk-turnover-v0.1"
+			if excluded[code] > 0 {
+				d.ExcludedRows = []marketdata.SourceExclusion{{Date: "2024-11-01", Rows: excluded[code], Reason: "session_before_supported_20241105"}}
+			}
+		}
 		d, err = jquantsDataset(ctx, d, code, first.Format("2006-01-02"), first.AddDate(0, 1, -1).Format("2006-01-02"), byCode[code])
 		if err != nil {
 			return nil, err

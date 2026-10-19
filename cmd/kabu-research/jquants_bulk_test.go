@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
 )
 
 func TestBulkImportChecksOriginalBytesAndGzipIntegrity(t *testing.T) {
@@ -43,6 +44,21 @@ func TestBulkImportChecksOriginalBytesAndGzipIntegrity(t *testing.T) {
 	files, _ := filepath.Glob("data/research/bars-*.json")
 	if len(files) != 1 {
 		t.Fatal("missing normalized data")
+	}
+	if err := run(context.Background(), []string{"import-jquants-bulk", "-input", "capture.json", "-symbols", "0000@1", "-with-turnover"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	extended, _ := filepath.Glob("data/research/bars-turnover-*.json")
+	if len(extended) != 1 {
+		t.Fatal("extended import not saved separately")
+	}
+	data, err := os.ReadFile(extended[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var modern marketdata.Dataset
+	if json.Unmarshal(data, &modern) != nil || modern.Source.Format != marketdata.JQuantsTurnoverFormat || modern.Days[0].Bars[0].TurnoverJPY != "1000" || !strings.Contains(out.String(), "excluded_selected_symbol_rows=0") {
+		t.Fatal("turnover CLI lost source or amount")
 	}
 	for _, dataset := range []jquantsbulk.Dataset{jquantsbulk.Daily, jquantsbulk.Master} {
 		r.Dataset = dataset

@@ -17,12 +17,25 @@ import (
 // changing any day-quality issue. Its source hash identifies the sorted original
 // source references, rather than pretending to be one original gzip's hash.
 func JoinJQuants(ctx context.Context, inputs []marketdata.Dataset) (marketdata.Dataset, error) {
+	return joinJQuants(ctx, inputs, false)
+}
+
+func JoinJQuantsWithTurnover(ctx context.Context, inputs []marketdata.Dataset) (marketdata.Dataset, error) {
+	return joinJQuants(ctx, inputs, true)
+}
+
+func joinJQuants(ctx context.Context, inputs []marketdata.Dataset, turnover bool) (marketdata.Dataset, error) {
 	var result marketdata.Dataset
 	if len(inputs) == 0 || len(inputs) > 24 {
 		return result, errors.New("結合する月次分足は1〜24件で指定してください")
 	}
 	result = inputs[0]
 	result.Days = []marketdata.Day{}
+	result.ExcludedRows = nil
+	format := "jquants-bulk-minute-v0.1"
+	if turnover {
+		format = marketdata.JQuantsTurnoverFormat
+	}
 	sources := []marketdata.Source{}
 	seenDays := map[string]bool{}
 	seenSources := map[string]bool{}
@@ -31,10 +44,11 @@ func JoinJQuants(ctx context.Context, inputs []marketdata.Dataset) (marketdata.D
 		if ctx.Err() != nil {
 			return result, errors.New("分足結合を中断しました")
 		}
-		if marketdata.Validate(input) != nil || input.Symbol != result.Symbol || !strings.HasSuffix(input.Symbol, "@1") || input.Environment != "production" || input.Origin != "observed" || input.Source.Format != "jquants-bulk-minute-v0.1" || input.Source.Label != "start" || seenSources[input.Source.SHA256] {
+		if marketdata.Validate(input) != nil || input.Symbol != result.Symbol || !strings.HasSuffix(input.Symbol, "@1") || input.Environment != "production" || input.Origin != "observed" || input.Source.Format != format || input.Source.Label != "start" || seenSources[input.Source.SHA256] {
 			return result, errors.New("同銘柄の元J-Quants月次分足と重複を確認してください")
 		}
 		seenSources[input.Source.SHA256] = true
+		result.ExcludedRows = append(result.ExcludedRows, input.ExcludedRows...)
 		sources = append(sources, input.Source)
 		if input.Source.ReceivedAt.After(latest) {
 			latest = input.Source.ReceivedAt
@@ -70,6 +84,10 @@ func JoinJQuants(ctx context.Context, inputs []marketdata.Dataset) (marketdata.D
 	digest := sha256.Sum256(raw)
 	result.Source = marketdata.Source{Format: marketdata.JQuantsJoinedFormat, SHA256: hex.EncodeToString(digest[:]), Label: "start", ReceivedAt: latest}
 	result.Converter = Version + "/jquants-month-join-v0.1"
+	if turnover {
+		result.Source.Format = marketdata.JQuantsTurnoverJoinedFormat
+		result.Converter = Version + "/jquants-turnover-month-join-v0.1"
+	}
 	if err := marketdata.Validate(result); err != nil {
 		return marketdata.Dataset{}, err
 	}

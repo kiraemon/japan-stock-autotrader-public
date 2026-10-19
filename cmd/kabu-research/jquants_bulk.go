@@ -24,6 +24,7 @@ func importJQuantsBulk(ctx context.Context, args []string, out io.Writer) error 
 	fs.SetOutput(out)
 	input := fs.String("input", "", "完了したbulk-run JSON（オフライン専用）")
 	symbols := fs.String("symbols", "7203@1,8306@1,6501@1", "抽出する東証銘柄、最大50")
+	turnover := fs.Bool("with-turnover", false, "元Vaを厳密に保持する別形式。2024/11/1の対象銘柄行は対応外として件数を保存")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -65,17 +66,29 @@ func importJQuantsBulk(ctx context.Context, args []string, out io.Writer) error 
 		return errors.New("bulk gzip形式を確認してください")
 	}
 	defer z.Close()
-	datasets, err := buildbars.FromJQuantsBulkCSV(ctx, z, file.SHA256, r.Month, r.Captured, strings.Split(*symbols, ","))
+	convert := buildbars.FromJQuantsBulkCSV
+	if *turnover {
+		convert = buildbars.FromJQuantsBulkCSVWithTurnover
+	}
+	datasets, err := convert(ctx, z, file.SHA256, r.Month, r.Captured, strings.Split(*symbols, ","))
 	if err != nil {
 		return err
 	}
 	for _, bars := range datasets {
-		path, body, err := save("bars", bars)
+		prefix := "bars"
+		if *turnover {
+			prefix = "bars-turnover"
+		}
+		path, body, err := save(prefix, bars)
 		if err != nil {
 			return err
 		}
 		settings := struct{ Month, Symbol, GzipSHA256 string }{r.Month, bars.Symbol, file.SHA256}
-		record, err := recordRun("import-jquants-bulk", filepath.Base(*input), raw, hash(raw), path, body, settings)
+		command := "import-jquants-bulk"
+		if *turnover {
+			command += "-turnover"
+		}
+		record, err := recordRun(command, filepath.Base(*input), raw, hash(raw), path, body, settings)
 		if err != nil {
 			return err
 		}
@@ -85,6 +98,15 @@ func importJQuantsBulk(ctx context.Context, args []string, out io.Writer) error 
 		}
 		if _, err := fmt.Fprintf(out, "bulk分足保存: symbol=%s / month=%s / days=%d / bars=%d / quality_promoted=false\n保存: %s\n実行記録: %s\n", bars.Symbol, r.Month, len(bars.Days), count, path, record); err != nil {
 			return err
+		}
+		if *turnover {
+			excluded := 0
+			for _, x := range bars.ExcludedRows {
+				excluded += x.Rows
+			}
+			if _, err := fmt.Fprintf(out, "turnover_contract=%s / excluded_selected_symbol_rows=%d / original_gzip_retained=true\n", bars.Source.Format, excluded); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
