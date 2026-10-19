@@ -89,6 +89,7 @@ type studyReport struct {
 	Adopted       bool            `json:"strategy_adopted"`
 	Trading       bool            `json:"trading_eligible"`
 	Limitations   []string        `json:"limitations"`
+	FreezeSHA     string          `json:"final_freeze_sha256,omitempty"`
 }
 
 func studyPeriods(raw []byte, sessions []string) (map[string][]string, error) {
@@ -127,14 +128,15 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("study-s01", flag.ContinueOnError)
 	fs.SetOutput(out)
 	input := fs.String("input", "", "指標索引/入力manifest/期間計画をhash固定した研究manifest")
-	phase := fs.String("phase", "development", "developmentのみ。最終評価の損益は開かない")
+	phase := fs.String("phase", "development", "development / holdout。holdoutは固定したfreeze必須")
+	freeze := fs.String("freeze", "", "最終コード/開発結果/検証/同一計算ソースを固定したJSON")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
 	}
-	if *phase != "development" {
+	if (*phase != "development" && *phase != "holdout") || (*phase == "holdout" && *freeze == "") || (*phase == "development" && *freeze != "") {
 		return errors.New("最終評価は開発/検証後にコード/費用/判定を固定するまで開きません")
 	}
 	if fs.NArg() != 0 || *input == "" {
@@ -243,11 +245,32 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("全日付/銘柄の指標行列を確認してください")
 	}
 	development := append(append([]string{}, parts["train"]...), parts["validation"]...)
+	enabledParts := []string{"train", "validation"}
+	displayPart := "validation"
+	freezeSHA := ""
+	if *phase == "holdout" {
+		freezeSHA, err = checkStudyFreeze(*freeze, raw)
+		if err != nil {
+			return err
+		}
+		revision, _ := studyBuildIdentity()
+		if err := reserveStudyOpening(freezeSHA, hash(raw), revision); err != nil {
+			return err
+		}
+		development = append([]string{}, parts["holdout"]...)
+		enabledParts = []string{"holdout"}
+		displayPart = "holdout"
+	}
 	allowed := map[string]bool{}
 	for _, date := range development {
 		allowed[date] = true
 	}
 	r := studyReport{Version: "s01-comparative-study-v0.1", Phase: *phase, ManifestSHA: hash(raw), PlanSHA: prep.PlanSHA, IndicatorsSHA: m.IndicatorsSHA, PeriodSHA: m.PeriodSHA, Sessions: development, Matrices: []studyArtifact{}, Books: []studyBook{}, NewPNL: true, Limitations: []string{"development_and_validation_only_no_holdout_pnl", "all_original_missing_cases_retained", "same_provider_price_diagnostic_not_execution_proof", "research_capital_400000_not_live_limits", "no_real_orders_or_inventory_claim", "all_cost_scenarios_preserved_no_best_scenario_selection"}}
+	r.FreezeSHA = freezeSHA
+	r.HoldoutRead = *phase == "holdout"
+	if r.HoldoutRead {
+		r.Limitations[0] = "one_frozen_holdout_version_no_retuning"
+	}
 	modelCases := map[string][]researchbook.Case{}
 	seen := map[string]bool{}
 	stockSeen := map[string]bool{}
@@ -294,6 +317,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 			days[d.Date] = d
 		}
 		matrix := studyMatrix{Version: r.Version, Symbol: stock.Symbol, InputSHA: file.SHA, Models: studyModels, Rows: []studyMatrixRow{}, NewPNL: true}
+		matrix.HoldoutRead = r.HoldoutRead
 		for _, c := range stock.Cases {
 			key := c.Date + "/" + stock.Symbol
 			if rank, ok := expected[key]; !ok || rank != c.LiquidityRank || seen[key] {
@@ -303,7 +327,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 			if c.Opening.QualityPromoted || c.Opening.TradingEligible || c.Opening.StrategyAdopted || c.ATR.QualityPromoted || c.ATR.Version != s01.Version {
 				return errors.New("元の指標の品質/戦略版を確認してください")
 			}
-			// Do not invoke either signal engine for ANY holdout row.
+			// Route only the selected frozen phase to either signal engine.
 			if !allowed[c.Date] {
 				continue
 			}
@@ -377,7 +401,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New("比較行列に日付/銘柄の不足があります")
 	}
 	for _, model := range studyModels {
-		if len(modelCases[model]) != 144*30 {
+		if len(modelCases[model]) != len(development)*30 {
 			return errors.New("開発/検証の完全な行列を確認してください")
 		}
 		sort.Slice(modelCases[model], func(i, j int) bool {
@@ -387,7 +411,7 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 			}
 			return a.Symbol < b.Symbol
 		})
-		for _, partition := range []string{"train", "validation"} {
+		for _, partition := range enabledParts {
 			selected := []researchbook.Case{}
 			for _, c := range modelCases[model] {
 				if c.Date >= fixedPartitions[partition].From && c.Date <= fixedPartitions[partition].To {
@@ -418,13 +442,13 @@ func runStudy(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	record, err := recordRun("study-s01", filepath.Base(*input), raw, hash(raw), path, body, m)
+	record, err := recordRun("study-s01", filepath.Base(*input), raw, hash(raw), path, body, map[string]any{"manifest": m, "phase": *phase, "final_freeze_sha256": r.FreezeSHA})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "S01比較: phase=development / sessions=144 / model_cases=21600 / books=%d / holdout_pnl_read=false / strategy_adopted=false\n", len(r.Books))
+	fmt.Fprintf(out, "S01比較: phase=%s / sessions=%d / model_cases=%d / books=%d / holdout_pnl_read=%t / strategy_adopted=false\n", *phase, len(development), len(development)*30*5, len(r.Books), r.HoldoutRead)
 	for _, b := range r.Books {
-		if b.Partition == "validation" && !b.Summary.Scenario.CommonOnly && b.Summary.Scenario.FrictionBPS == 10 && b.Summary.Scenario.ShortExtra == 0 {
+		if b.Partition == displayPart && !b.Summary.Scenario.CommonOnly && b.Summary.Scenario.FrictionBPS == 10 && b.Summary.Scenario.ShortExtra == 0 {
 			net := formatStudyMoney(b.Summary.AfterData)
 			fmt.Fprintf(out, "検証: model=%s / commission=%s / short_extra=0 / friction_bp=10 / executed=%d / common=%d/%d / after_data_jpy=%s / gate=%s\n", b.Model, b.Summary.Scenario.Commission, b.Summary.Executed, b.Summary.Common, b.Summary.Cases, net, b.Summary.Decision)
 		}
