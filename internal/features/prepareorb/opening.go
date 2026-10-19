@@ -30,31 +30,34 @@ type Opening struct {
 	Volume                *string  `json:"volume_shares,omitempty"`
 	Range                 *Range   `json:"range_scaled,omitempty"`
 	MissingInterpretation string   `json:"missing_interpretation,omitempty"`
+	OriginalProblems      []string `json:"original_problems_before_explicit_assumption,omitempty"`
 }
 
 type Report struct {
-	Version               string            `json:"version"`
-	Scope                 string            `json:"scope"`
-	Symbol                string            `json:"symbol"`
-	Origin                string            `json:"origin"`
-	Source                marketdata.Source `json:"source"`
-	PriceScale            int64             `json:"price_scale"`
-	AsOf                  time.Time         `json:"as_of_jst"`
-	Target                Opening           `json:"target"`
-	Previous              []Opening         `json:"previous_sessions"`
-	CompletePrevious      int               `json:"complete_previous_openings"`
-	MissingPrevious       []string          `json:"unavailable_previous_dates"`
-	CalculationAvailable  bool              `json:"calculation_available"`
-	PreviousMean          *string           `json:"previous_mean_volume_exact,omitempty"`
-	RelativeVolume        *string           `json:"relative_volume_exact,omitempty"`
-	AtLeastOne            *bool             `json:"relative_volume_at_least_one,omitempty"`
-	Problems              []string          `json:"problems"`
-	QualityPromoted       bool              `json:"quality_promoted"`
-	TradingEligible       bool              `json:"trading_eligible"`
-	StrategyAdopted       bool              `json:"strategy_adopted"`
-	OpeningPolicy         string            `json:"opening_policy,omitempty"`
-	AvailablePrevious     *int              `json:"available_previous_openings,omitempty"`
-	SourceContractAssumed bool              `json:"source_contract_assumed,omitempty"`
+	Version               string             `json:"version"`
+	Scope                 string             `json:"scope"`
+	Symbol                string             `json:"symbol"`
+	Origin                string             `json:"origin"`
+	Source                marketdata.Source  `json:"source"`
+	PriceScale            int64              `json:"price_scale"`
+	AsOf                  time.Time          `json:"as_of_jst"`
+	Target                Opening            `json:"target"`
+	Previous              []Opening          `json:"previous_sessions"`
+	CompletePrevious      int                `json:"complete_previous_openings"`
+	MissingPrevious       []string           `json:"unavailable_previous_dates"`
+	CalculationAvailable  bool               `json:"calculation_available"`
+	PreviousMean          *string            `json:"previous_mean_volume_exact,omitempty"`
+	RelativeVolume        *string            `json:"relative_volume_exact,omitempty"`
+	AtLeastOne            *bool              `json:"relative_volume_at_least_one,omitempty"`
+	Problems              []string           `json:"problems"`
+	QualityPromoted       bool               `json:"quality_promoted"`
+	TradingEligible       bool               `json:"trading_eligible"`
+	StrategyAdopted       bool               `json:"strategy_adopted"`
+	OpeningPolicy         string             `json:"opening_policy,omitempty"`
+	AvailablePrevious     *int               `json:"available_previous_openings,omitempty"`
+	SourceContractAssumed bool               `json:"source_contract_assumed,omitempty"`
+	PriorZeroEvidence     []PastZeroEvidence `json:"prior_zero_volume_evidence,omitempty"`
+	PriorZeroUnavailable  []PastZeroFailure  `json:"prior_zero_volume_evidence_unavailable,omitempty"`
 }
 
 // ValidateSessions requires an explicit calendar. Observed rows must never
