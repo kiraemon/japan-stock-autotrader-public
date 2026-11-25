@@ -26,7 +26,10 @@ go build -o bin/kabu-readonly.exe ./cmd/kabu-readonly
 .\bin\kabu-readonly.exe -h
 ```
 
-合成デモだけを試す場合は、kabuステーションの設定は不要です。読み取り接続を行う場合は、各自の利用環境と接続条件を確認し、認証値をGitに登録しないでください。
+実データを取得する場合は、利用する接続先を準備します。
+
+- **kabuステーション®API**（三菱UFJ eスマート証券）は、Windowsでkabuステーションにログインし、API機能を有効化します。 [公式の設定手順](https://kabu.com/kabustation/manual/system_setting15.html)
+- **J-Quants API** は、対象データを利用できる契約とAPIキーが必要です。分足の個別取得モードには公式J-Quants CLIも使います。 [公式の利用範囲](https://jpx-jquants.com/ja/spec/data-spec)
 
 ## 扱うデータ
 
