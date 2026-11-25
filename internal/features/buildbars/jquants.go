@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 type jqRow struct {

@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
 )
 
 type Reader interface {

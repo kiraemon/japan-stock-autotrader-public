@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/streambars"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/streambars"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 // historyFeedCheck replays two raw archives in the explicit input/reference

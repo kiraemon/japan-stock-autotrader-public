@@ -3,7 +3,7 @@ package round4
 import (
 	"context"
 	"fmt"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 	"reflect"
 	"testing"
 	"time"

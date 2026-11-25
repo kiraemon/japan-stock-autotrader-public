@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 const NoiseRule = "NA30-JP-v0.1"

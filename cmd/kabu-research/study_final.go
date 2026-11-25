@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 type studyFreeze struct {

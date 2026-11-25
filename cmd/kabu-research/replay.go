@@ -7,9 +7,9 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/replaysignals"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/replaysignals"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
 )
 
 func replay(ctx context.Context, out io.Writer, input string, raw []byte, dataset marketdata.Dataset, direction r001.Direction, variant r001.Variant) error {

@@ -13,7 +13,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 const Version = "receipt-sampled-quoted-spread-v0.1"

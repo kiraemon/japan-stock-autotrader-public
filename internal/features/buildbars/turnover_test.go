@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 func TestTurnoverImportKeepsActualAmountAndCountsUnsupportedNovember(t *testing.T) {

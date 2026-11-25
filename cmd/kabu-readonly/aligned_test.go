@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/capturehistory"
-	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/capturehistory"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/telemetry"
 )
 
 type cliAlignedClock struct {

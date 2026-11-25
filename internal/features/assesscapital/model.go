@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 const Version = "independent-trade-capital-v0.1"

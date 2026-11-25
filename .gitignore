@@ -1,0 +1,24 @@
+# Local data and configuration
+.env
+.env.*
+!.env.example
+secrets/
+data/
+logs/
+*.key
+*.pem
+*.p12
+*.pfx
+*.db
+*.db-*
+*.sqlite*
+/.codex-remote-attachments/
+/.codex/
+/.tools/
+/.cache/
+/bin/
+coverage.out
+*.exe
+*.test
+__pycache__/
+Thumbs.db

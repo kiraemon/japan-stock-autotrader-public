@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
 )
 
 const Version = "fixed-cohort-review-v0.1"

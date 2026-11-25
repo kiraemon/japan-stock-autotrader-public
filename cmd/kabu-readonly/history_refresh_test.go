@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
 )
 
 func TestHistoryRefreshCompletionSpacingNoCatchupOrRetry(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
 )
 
 func TestRound3CohortsKeepUnavailableAndSeparateReference(t *testing.T) {

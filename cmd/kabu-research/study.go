@@ -12,13 +12,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/backtests01"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtests01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 type studyManifest struct {

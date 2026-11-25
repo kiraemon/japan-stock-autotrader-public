@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 const dailyHeader = "Date,Code,O,H,L,C,UL,LL,Vo,Va,AdjFactor,MktCap,ExRT"

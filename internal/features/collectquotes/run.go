@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
 )
 
 type Options struct {

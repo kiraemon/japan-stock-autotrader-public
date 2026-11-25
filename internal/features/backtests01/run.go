@@ -8,8 +8,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 const ModelVersion = "s01-next-open-stop-or-20m-v0.1"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 // JoinJQuants joins validated monthly inputs without filling absent days or

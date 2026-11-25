@@ -7,7 +7,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/papertrade"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/papertrade"
 )
 
 func paperDemo(ctx context.Context, out io.Writer) error {

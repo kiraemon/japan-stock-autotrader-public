@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/credentials"
-	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
-	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader/internal/jquantscli"
-	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsrate"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/credentials"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantscli"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsrate"
 )
 
 func main() {

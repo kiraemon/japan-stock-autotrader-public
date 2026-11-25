@@ -9,10 +9,7 @@ import (
 )
 
 func TestRound2PeriodsRejectOldMissingReorderedAndRetunedSessions(t *testing.T) {
-	raw, err := os.ReadFile("../../examples/research/s01-round2-periods.plan.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readArchivedPlan(t, "../../examples/research/s01-round2-periods.plan.json")
 	var p round2PeriodPlan
 	if json.Unmarshal(raw, &p) != nil {
 		t.Fatal("period fixture")
@@ -60,10 +57,7 @@ func TestRound2PeriodsRejectOldMissingReorderedAndRetunedSessions(t *testing.T) 
 }
 
 func TestRound2PreparationCannotConsumeLegacyManifestOrPublishPnL(t *testing.T) {
-	plan, err := os.ReadFile("../../examples/research/s01-jp20.plan.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plan := readArchivedPlan(t, "../../examples/research/s01-jp20.plan.json")
 	t.Chdir(t.TempDir())
 	s01Fixture(t, plan)
 	var out bytes.Buffer

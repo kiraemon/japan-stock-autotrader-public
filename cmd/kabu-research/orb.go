@@ -13,10 +13,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 type orbSource struct {

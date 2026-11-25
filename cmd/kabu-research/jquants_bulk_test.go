@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 func TestBulkImportChecksOriginalBytesAndGzipIntegrity(t *testing.T) {

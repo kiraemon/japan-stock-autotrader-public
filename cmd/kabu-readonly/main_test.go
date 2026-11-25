@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
-	"github.com/kiraemon/japan-stock-autotrader/internal/kabu"
-	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/telemetry"
 )
 
 func TestInvalidArgumentsFailBeforeAuthentication(t *testing.T) {

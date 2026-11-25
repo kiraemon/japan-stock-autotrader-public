@@ -29,10 +29,7 @@ func TestStudyCannotOpenHoldoutOrUnpinnedInputs(t *testing.T) {
 	}
 }
 func TestStudyFixedChronologicalPeriodsAndFormatting(t *testing.T) {
-	raw, err := os.ReadFile("../../examples/research/long-history.plan.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	raw := readArchivedPlan(t, "../../examples/research/long-history.plan.json")
 	// Fabricated sessions with the required published boundaries/counts. This
 	// tests partition routing only; the real CLI uses the pinned TSE calendar.
 	sessions := []string{}

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 func day(date string, open, close int64) marketdata.Day {

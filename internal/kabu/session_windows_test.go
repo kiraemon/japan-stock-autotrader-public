@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/instanceguard"
 )
 
 func TestSessionOwnsBothEnvironmentsUntilClosed(t *testing.T) {

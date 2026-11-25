@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/round3"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/round3"
 )
 
 const Version = "fixed-morning-next-open-no-price-stop-v0.1"

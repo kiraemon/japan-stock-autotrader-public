@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 const Version = "comparebars-v0.1"

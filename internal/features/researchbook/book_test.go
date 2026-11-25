@@ -3,7 +3,7 @@ package researchbook
 import (
 	"context"
 	"encoding/json"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 	"reflect"
 	"testing"
 )

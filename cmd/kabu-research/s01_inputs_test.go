@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 func writeS01FixtureJSON(t *testing.T, path string, v any) []byte {
@@ -73,8 +73,8 @@ func s01Fixture(t *testing.T, plan []byte) s01InputManifest {
 }
 
 func TestS01InputsStableCausalIndicatorsAndNoPromotion(t *testing.T) {
-	plan, err := os.ReadFile("../../examples/research/s01-jp20.plan.json")
-	if err != nil || hash(plan) != s01.PlanSHA256 {
+	plan := readArchivedPlan(t, "../../examples/research/s01-jp20.plan.json")
+	if hash(plan) != s01.PlanSHA256 {
 		t.Fatal("fixed plan changed without a strategy version")
 	}
 	t.Chdir(t.TempDir())
@@ -112,10 +112,7 @@ func TestS01InputsStableCausalIndicatorsAndNoPromotion(t *testing.T) {
 }
 
 func TestS01InputsRejectTamperAndUnsafeEvidence(t *testing.T) {
-	plan, err := os.ReadFile("../../examples/research/s01-jp20.plan.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	plan := readArchivedPlan(t, "../../examples/research/s01-jp20.plan.json")
 	for _, fault := range []string{"plan", "minute", "count", "reconciliation", "quality", "missing_calendar"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Chdir(t.TempDir())

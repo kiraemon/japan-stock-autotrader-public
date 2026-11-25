@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/papertrade"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/papertrade"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
 )
 
 type quoteAction struct {

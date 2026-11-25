@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
 )
 
 const QuoteExecutionVersion = "synthetic-fresh-quote-execution-v0.1"

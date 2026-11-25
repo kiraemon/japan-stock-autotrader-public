@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 type s01InputManifest struct {

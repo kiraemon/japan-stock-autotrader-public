@@ -5,7 +5,7 @@ package researchbook
 import (
 	"context"
 	"errors"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 	"math/big"
 	"regexp"
 	"sort"

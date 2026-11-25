@@ -6,11 +6,11 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/backtests01"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtests01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 )
 
 type round2Cohorts struct {

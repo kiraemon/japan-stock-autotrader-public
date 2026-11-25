@@ -3,8 +3,8 @@ package backtests01
 import (
 	"context"
 	"encoding/json"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
 	"strings"
 	"testing"
 	"time"

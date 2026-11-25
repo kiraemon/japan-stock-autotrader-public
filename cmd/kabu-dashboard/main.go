@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/dashboard"
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/inspectquality"
-	"github.com/kiraemon/japan-stock-autotrader/internal/telemetry"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/dashboard"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/inspectquality"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/telemetry"
 )
 
 func main() {

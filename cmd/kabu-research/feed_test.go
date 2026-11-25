@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/streamsignals"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/streamsignals"
 )
 
 func TestFeedDemoSavedEventsAndResultsReproduce(t *testing.T) {

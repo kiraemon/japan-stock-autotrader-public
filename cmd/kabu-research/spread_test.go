@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/features/observespread"
-	"github.com/kiraemon/japan-stock-autotrader/internal/marketdata"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/observespread"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
 )
 
 func spreadFixture(t *testing.T) spreadManifest {

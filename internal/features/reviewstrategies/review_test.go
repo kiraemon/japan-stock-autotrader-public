@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
 )
 
 func fixture() ([]string, []string, []Day) {
