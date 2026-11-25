@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -87,12 +88,15 @@ def branch_coverage(package, gobco, module, profiles):
     return relative, covered, total
 
 
-def print_result(label, covered, total, floor):
+def print_result(metric, label, covered, total, floor):
     if total <= 0 or covered > total:
         raise ValueError(f"No valid coverage total for {label}.")
     passed = covered * 100 >= total * floor
     status = "PASS" if passed else "BELOW TARGET"
     print(f"{label}: {covered}/{total} ({100 * covered / total:.2f}%), target {floor}% [{status}]", flush=True)
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with Path(output).open("a", encoding="utf-8") as stream:
+            stream.write(f"{metric}={covered}/{total}/{floor}\n")
     return passed
 
 
@@ -100,7 +104,7 @@ def measure_statements(work):
     profile = work / "statements.out"
     print("Measuring Go statements", flush=True)
     run(("go", "test", "-count=1", "-coverpkg=./...", "-covermode=atomic", f"-coverprofile={profile}", "./..."), ROOT)
-    return print_result("C0 statements", *statement_coverage(profile), STATEMENT_FLOOR)
+    return print_result("c0", "C0 statements", *statement_coverage(profile), STATEMENT_FLOOR)
 
 
 def measure_branches(work, jobs):
@@ -119,7 +123,7 @@ def measure_branches(work, jobs):
             print(f"  {relative}: {covered}/{total}", flush=True)
             covered_total += covered
             branch_total += total
-    return print_result("C1 gobco branches", covered_total, branch_total, BRANCH_FLOOR)
+    return print_result("c1", "C1 gobco branches", covered_total, branch_total, BRANCH_FLOOR)
 
 
 def main():
