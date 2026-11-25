@@ -202,7 +202,10 @@ func sessionDemo(ctx context.Context, out io.Writer, direction r001.Direction, v
 		return err
 	}
 	for _, c := range report.Cases {
-		if _, err := fmt.Fprintf(out, "case=%s / passed=%t / complete=%t / clean_finish=%t / reason=%s\n", c.Name, c.Passed, c.Final.Complete, c.Final.Final.CleanFinish, c.Final.StopReason); err != nil {
+		if _, err := fmt.Fprintf(out,
+			"case=%s / passed=%t / complete=%t / clean_finish=%t / reason=%s / open_quantity=%d\n",
+			c.Name, c.Passed, c.Final.Complete, c.Final.Final.CleanFinish, c.Final.StopReason, c.Final.Final.OpenQuantity,
+		); err != nil {
 			return err
 		}
 	}
