@@ -2,6 +2,7 @@
 
 | コマンド | 検証対象・入力 | 主な結果 |
 | --- | --- | --- |
+| `python -B scripts/verify.py` | Goのテスト・静的検査、合成セッションと数量台帳のデモ、Pythonのテスト。 | 最初の失敗を表示して異常終了。全項目に成功すると正常終了。 |
 | `go run ./cmd/kabu-research session-demo` | 組み込みの合成時系列8ケース。`-direction` は `long` または `short`、`-variant` は `A` または `B`。 | 各ケースの `passed`、完了状態、停止理由。ケース別結果と実行記録は `data/research/` に保存。 |
 | `go run ./cmd/kabu-research paper-demo` | 組み込みの仮想注文・約定イベント。 | 数量台帳の状態、検証結果、チェックポイントの照合結果。デモ結果と実行記録は `data/research/` に保存。 |
 | `go test ./...` | Goのテスト。アーキテクチャの依存境界の検査を含む。 | パッケージごとのテスト結果。元の研究計画に依存するケースは対象ファイルがある場合に実行。 |
