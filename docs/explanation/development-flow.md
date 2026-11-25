@@ -19,6 +19,8 @@ flowchart LR
 - **Construction**では、AIが変更を実装し、受入条件に対応する検証を実行します。PRからIssueにリンクし、各条件の確認結果、Actionsの結果、未確認の項目を記録します。対応が完了するPRでは `Closes #番号` を使うと、`main` へのマージ時にIssueも閉じます。
 - **Operations**では、人間が差分とPRの検証結果を見てマージを判断します。マージ後は `main` のCIで統合後も検証が通ることを確認します。作業中に見つかった改善は、再現できる合成テスト、参照する文書、次のIssueのうち、再利用しやすい形で残します。
 
+[Inceptionテンプレート](../../.github/ISSUE_TEMPLATE/inception.md)では、人間が最初に読む箇所に判断事項と提案を置きます。関係や順番が判断に影響するときは短い図を添え、受入条件は「場面・期待する結果・確かめ方」の表にします。設計や検証の詳細は折りたたみに置きます。
+
 CIで失敗した場合は、失敗した条件をAIが読み取り、修正後に同じ検証を再実行します。
 
 合成セッションの残数量を表示する変更では、[Issue #3](https://github.com/kiraemon/japan-stock-trading-lab/issues/3)で正常終了・気配途絶・台帳との一致を受入条件に定め、[PR #4](https://github.com/kiraemon/japan-stock-trading-lab/pull/4)に各条件の検証結果を記録しました。利用時に参照する表示項目の意味は[コマンドリファレンス](../reference/verification-commands.md)に記載します。
