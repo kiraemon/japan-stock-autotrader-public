@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 const SessionVersion = "synthetic-timed-quote-session-v0.1"

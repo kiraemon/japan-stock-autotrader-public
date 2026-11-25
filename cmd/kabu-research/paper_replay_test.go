@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/papertrade"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/papertrade"
 )
 
 func TestPaperReplayCLIProvenanceAndScope(t *testing.T) {

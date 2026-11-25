@@ -15,7 +15,7 @@ import (
 	"testing/fstest"
 )
 
-const internalPrefix = "github.com/kiraemon/japan-stock-autotrader-public/internal/"
+const internalPrefix = "github.com/kiraemon/japan-stock-trading-lab/internal/"
 
 func feature(name string) string {
 	if !strings.HasPrefix(name, "features/") {

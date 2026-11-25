@@ -2,7 +2,7 @@ package s01
 
 import (
 	"context"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 	"reflect"
 	"testing"
 	"time"

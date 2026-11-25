@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/capturehistory"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/streambars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/capturehistory"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/streambars"
 )
 
 const minuteAuditVersion = "processing-history-minute-audit-v0.1"

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/s01"
 )
 
 func TestRound2P0KeepsLegacyTradesAndChangesOnlyExplicitPolicyIdentity(t *testing.T) {

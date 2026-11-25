@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/s01"
 )
 
 const round2PeriodSHA = "2f7b838afde52af357f055385075f502183cb554e40fa40d8bdf9c9c12f2c9f7"

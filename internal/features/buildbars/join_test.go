@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 func joinFixture(date, source string) marketdata.Dataset {

@@ -9,10 +9,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/s01"
 )
 
 func TestRound2LegacyCannotUseP0AvailabilityOrRVOL(t *testing.T) {

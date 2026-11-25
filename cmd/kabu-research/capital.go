@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/assesscapital"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/assesscapital"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 type capitalDay struct {

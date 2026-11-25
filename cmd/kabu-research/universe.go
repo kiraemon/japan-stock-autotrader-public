@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareuniverse"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/prepareuniverse"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 type universeManifest struct {

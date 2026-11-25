@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
 )
 
 func importJQuantsBulk(ctx context.Context, args []string, out io.Writer) error {

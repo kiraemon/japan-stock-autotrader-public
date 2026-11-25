@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 func TestVariantBThresholdAndNoSecondCandidate(t *testing.T) {

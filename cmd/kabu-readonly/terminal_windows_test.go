@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/telemetry"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/kabu"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/telemetry"
 )
 
 // TestTerminalHelper is opt-in: run the compiled test binary in a real terminal

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/round4"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/round4"
 	"strings"
 	"testing"
 )

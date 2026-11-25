@@ -10,11 +10,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/papertrade"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/streamsignals"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/papertrade"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/streamsignals"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 type sessionGate struct{ feed *streamsignals.Feed }

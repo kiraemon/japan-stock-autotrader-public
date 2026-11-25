@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/kabu"
 )
 
 func TestSavePreservesPartialRun(t *testing.T) {

@@ -19,6 +19,16 @@ go vet ./...
 
 過去の研究計画を照合するテストは、その計画ファイルがない場合にスキップします。合成入力で動くテストは通常どおり実行します。
 
+## Pythonで研究コードを試す
+
+Python 3.12で確認しています。リポジトリのルートから、標準ライブラリの `unittest` を使って実行できます。
+
+```sh
+python -B -m unittest discover -s research/python -t research/python -v
+```
+
+[MACDバックテスト](../research/python/macd_backtest)は合成分足をメモリ上で生成し、足の集約、シグナル、仮想売買の費用と約定順序を検証します。
+
 ## Windowsで読み取りCLIをビルドする
 
 ```powershell

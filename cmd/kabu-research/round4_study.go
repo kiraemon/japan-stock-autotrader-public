@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/round3"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/round4"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/round3"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/round4"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/s01"
 )
 
 const round4SourceSHA = "5c8a5be069ecc657cd97cd25f7239c8ad6af592f768e131e1540d917408e02ba"

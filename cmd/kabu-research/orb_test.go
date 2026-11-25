@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
 )
 
 func writeORBFixture(t *testing.T) orbManifest {

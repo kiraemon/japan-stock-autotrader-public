@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 func writeCohortFixture(t *testing.T) cohortManifest {

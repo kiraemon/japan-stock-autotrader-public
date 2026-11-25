@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/credentials"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/instanceguard"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsrate"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/credentials"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsrate"
 )
 
 func runBulk(ctx context.Context, root, month string, dataset jquantsbulk.Dataset, listOnly, calendarOnly bool, out io.Writer) error {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/capturehistory"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/telemetry"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/capturehistory"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/kabu"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/telemetry"
 )
 
 type minuteAuditSession struct {

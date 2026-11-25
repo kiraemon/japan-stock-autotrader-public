@@ -6,9 +6,9 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/papertrade"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/papertrade"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 func paperReplay(ctx context.Context, out io.Writer, direction r001.Direction, variant r001.Variant) error {

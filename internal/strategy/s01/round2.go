@@ -4,7 +4,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 // Scope was fixed before candidate PnL. There are no cross-product variants.

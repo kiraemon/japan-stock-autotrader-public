@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/kabu"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/kabu"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 const AlignedVersion = "aligned-history-capture-v0.2"

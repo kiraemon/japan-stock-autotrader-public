@@ -11,13 +11,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtestintraday"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtests01"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/prepareorb"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/researchbook"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/round3"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/s01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtestintraday"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtests01"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/prepareorb"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/researchbook"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/round3"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/s01"
 )
 
 var round3Models = []string{s01.Version, round3.NoiseRule, round3.GapRule}

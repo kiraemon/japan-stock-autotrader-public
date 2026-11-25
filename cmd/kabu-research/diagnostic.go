@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/backtest"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/backtest"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
 type diagnosticOptions struct {

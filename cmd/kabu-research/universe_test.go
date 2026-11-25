@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
 )
 
 func universeFixture(t *testing.T) universeManifest {

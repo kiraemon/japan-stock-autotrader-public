@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/inspecthistory"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/inspectquality"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/inspecthistory"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/inspectquality"
 )
 
 func main() {

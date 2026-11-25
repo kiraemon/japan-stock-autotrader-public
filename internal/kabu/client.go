@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/instanceguard"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/instanceguard"
 )
 
 type Environment string

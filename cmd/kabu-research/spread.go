@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/observespread"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/observespread"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 type spreadManifest struct {

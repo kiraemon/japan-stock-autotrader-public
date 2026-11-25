@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/features/buildbars"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/jquantsbulk"
-	"github.com/kiraemon/japan-stock-autotrader-public/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/features/buildbars"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/jquantsbulk"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
 )
 
 const round3ScopeSHA = "05f28d1bf6511ce124183cfbc5ff0e03a522e4b9d6259bf5d7e70a21786ce49d"
