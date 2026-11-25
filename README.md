@@ -50,9 +50,9 @@ python -B -m unittest discover -s research/python -t research/python -v
 
 詳しい流れは [アーキテクチャ](docs/ARCHITECTURE.md) と [起動手順](docs/QUICKSTART.md) にあります。
 
-## 開発フロー（導入案）
+## 開発フロー
 
-AI-DLCで合意した受入条件を、ローカルとGitHub Actionsで共通の検証につなげる構成です。
+AI-DLCで合意した受入条件を、ローカルとGitHub Actionsで共通の検証につなげます。
 
 ![AIが要件整理と実装を行い、人間が受入条件とマージを判断する開発フロー。AGENTS.mdは設計書と共通の検証コマンドを案内します。](docs/images/development-flow.png)
 
