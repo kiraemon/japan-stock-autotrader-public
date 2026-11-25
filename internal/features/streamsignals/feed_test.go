@@ -36,7 +36,8 @@ func TestDemoBothDirectionsAndVariants(t *testing.T) {
 
 func fixture() (*streamsignals.Feed, marketdata.Dataset) {
 	d := backtest.Synthetic(r001.Long)
-	f, _ := streamsignals.New(streamsignals.Config{Date: d.Days[0].Date, Symbol: d.Symbol, Origin: d.Origin, Direction: r001.Long, Variant: r001.B})
+	evaluator, _ := r001.NewScanner(d.Days[0].Date, r001.Long, r001.B)
+	f, _ := streamsignals.New(streamsignals.Config{Date: d.Days[0].Date, Symbol: d.Symbol, Origin: d.Origin, Direction: r001.Long, Variant: r001.B}, r001.VersionFor(r001.Long, r001.B), evaluator)
 	return f, d
 }
 

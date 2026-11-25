@@ -68,7 +68,11 @@ func TestHistoryFeedCLIReplaysRawResponsesWithoutPromotion(t *testing.T) {
 	if c.StrategyEligible || *c.Bar.Volume != 10 || len(c.Issues) < 5 {
 		t.Fatal("quality cleared or quantity duplicated")
 	}
-	feed, err := streamsignals.New(streamsignals.Config{Date: "2026-10-16", Symbol: "7203@1", Origin: "observed", Direction: r001.Long, Variant: r001.A})
+	evaluator, err := r001.NewScanner("2026-10-16", r001.Long, r001.A)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed, err := streamsignals.New(streamsignals.Config{Date: "2026-10-16", Symbol: "7203@1", Origin: "observed", Direction: r001.Long, Variant: r001.A}, r001.VersionFor(r001.Long, r001.A), evaluator)
 	if err != nil {
 		t.Fatal(err)
 	}

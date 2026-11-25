@@ -2,7 +2,7 @@
 
 ## コンポーネント構成
 
-公開版の主なGoコンポーネントを示します。矢印は、呼び出す側から利用する側に向いています。
+公開版の主なGoコンポーネントを合成セッションの経路を中心に示します。矢印は、呼び出す側から利用する側に向いています。
 
 ```mermaid
 flowchart TB
@@ -17,16 +17,19 @@ flowchart TB
     Gate["入力ゲート<br/>streamsignals"]
     Paper["仮想約定・数量台帳・復元<br/>papertrade"]
     View["ローカル表示・品質点検<br/>dashboard・inspectquality・inspecthistory"]
-    Strategy["戦略判断<br/>strategy/r001"]
+    Strategy["R001の判定ルール<br/>strategy/r001"]
+    Contract["共通の判定・売買方向<br/>internal/strategy"]
     Market["共通の市場データ型<br/>marketdata"]
   end
 
   Capture --> Adapters
   Research --> Gate
   Research --> Paper
+  Research --> Strategy
   Inspect --> View
-  Gate --> Strategy
-  Paper --> Strategy
+  Gate --> Contract
+  Paper --> Contract
+  Strategy --> Contract
   Strategy --> Market
 ```
 
@@ -37,7 +40,7 @@ flowchart TB
 | 分割イベント記録 | [paperrecordingv3](../../internal/paperrecordingv3)は、イベントをハッシュでつないで保存し、破損や途中終了時には再読込できた範囲を返します。 |
 | Pythonの研究 | [MACDバックテスト](../../research/python/macd_backtest)は、合成分足、シグナル、仮想売買の計算をPythonで再現します。 |
 
-起動CLIが入力の受け取り方と各処理を組み立てます。戦略は共通の市場データ型を受け取って判断を返し、仮想約定と数量台帳は `papertrade` が担当します。
+合成 `session-demo` では、起動CLIがR001の参入判定を入力ゲートへ、退出判定をペーパーセッションへ渡します。戦略は確定足や観測時刻から判断し、仮想約定の価格と数量、台帳と復元は `papertrade` が担当します。
 
 ## ペーパー取引の処理フロー
 

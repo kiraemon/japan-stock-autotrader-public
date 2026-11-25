@@ -88,7 +88,11 @@ func Demo(ctx context.Context, fixture marketdata.Dataset, direction r001.Direct
 		if ctx.Err() != nil {
 			return nil, r, errors.New("確定足入力の模擬試験を中断しました")
 		}
-		feed, err := New(input.Config)
+		evaluator, err := r001.NewScanner(input.Config.Date, input.Config.Direction, input.Config.Variant)
+		if err != nil {
+			return nil, r, err
+		}
+		feed, err := New(input.Config, r001.VersionFor(input.Config.Direction, input.Config.Variant), evaluator)
 		if err != nil {
 			return nil, r, err
 		}

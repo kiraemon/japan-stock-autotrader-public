@@ -5,15 +5,10 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
-type Decision struct {
-	At       time.Time       `json:"signal_at"`
-	Boundary int64           `json:"range_boundary"`
-	Accepted bool            `json:"accepted"`
-	Reason   string          `json:"reason"`
-	Volume   *VolumeDecision `json:"volume_filter,omitempty"`
-}
+type Decision = strategy.Decision
 
 // Scanner consumes completed minutes only. It has no future-bar collection,
 // orders, account, files, network, or wall clock. First candidate consumes the day.
@@ -61,6 +56,7 @@ func (s *Scanner) Observe(observedAt time.Time, bar marketdata.Bar) (*Decision, 
 			decision.Volume = &volume
 			decision.Accepted = volume.Passed
 			decision.Reason = volume.Reason
+			decision.Stop = !volume.Passed && volume.Reason != "volume_below_1_5x_previous_5"
 		}
 	}
 	s.previous = bar.Close

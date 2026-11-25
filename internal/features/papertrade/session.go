@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
-	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
 const SessionVersion = "synthetic-timed-quote-session-v0.1"
@@ -18,19 +18,25 @@ type MinuteGate interface {
 	Tick(now time.Time) MinuteDelivery
 }
 
+// ExitPolicy returns a reason to request an exit, or an empty string to hold.
+type ExitPolicy interface {
+	OnTimer(now, firstFillAt time.Time) string
+	OnClose(close, referencePrice int64) string
+}
+
 type MinuteDelivery struct {
 	Accepted, Duplicate, Complete bool
 	Reason                        string
-	Decision                      *r001.Decision
+	Decision                      *strategy.Decision
 }
 
 type SessionConfig struct {
-	Date        string         `json:"date_jst"`
-	Symbol      string         `json:"symbol"`
-	Environment string         `json:"environment"`
-	Origin      string         `json:"origin"`
-	Direction   r001.Direction `json:"direction"`
-	Variant     r001.Variant   `json:"variant"`
+	Date        string             `json:"date_jst"`
+	Symbol      string             `json:"symbol"`
+	Environment string             `json:"environment"`
+	Origin      string             `json:"origin"`
+	Direction   strategy.Direction `json:"direction"`
+	Variant     strategy.Variant   `json:"variant"`
 }
 
 type SessionInput struct {
@@ -42,9 +48,9 @@ type SessionInput struct {
 }
 
 type SessionSignal struct {
-	ObservedAt time.Time     `json:"observed_at"`
-	ReceivedAt time.Time     `json:"received_at"`
-	Decision   r001.Decision `json:"decision"`
+	ObservedAt time.Time         `json:"observed_at"`
+	ReceivedAt time.Time         `json:"received_at"`
+	Decision   strategy.Decision `json:"decision"`
 }
 
 type SessionState struct {
@@ -72,6 +78,7 @@ type SessionOutcome struct {
 
 type QuoteSession struct {
 	gate      MinuteGate
+	policy    ExitPolicy
 	ledger    *Simulator
 	execution *QuoteExecution
 	state     SessionState
@@ -79,12 +86,13 @@ type QuoteSession struct {
 	sequence  int
 }
 
-func NewQuoteSession(config SessionConfig, gate MinuteGate) (*QuoteSession, error) {
-	if _, err := r001.NewScanner(config.Date, config.Direction, config.Variant); err != nil || gate == nil || config.Origin != "synthetic" || config.Symbol != "0000@1" || config.Environment != "test" {
+func NewQuoteSession(config SessionConfig, rule string, gate MinuteGate, policy ExitPolicy) (*QuoteSession, error) {
+	if gate == nil || policy == nil || rule == "" || marketdata.Date(marketdata.Clock(config.Date, 9, 0)) != config.Date ||
+		!strategy.ValidDirection(config.Direction) || config.Origin != "synthetic" || config.Symbol != "0000@1" || config.Environment != "test" {
 		return nil, errors.New("時刻順セッションは仮銘柄の合成条件と確定足検査だけを受け付けます")
 	}
 	ledger, _ := New(config.Direction)
-	return &QuoteSession{gate: gate, ledger: ledger, execution: NewQuoteExecution(ledger), state: SessionState{Version: SessionVersion, Rule: r001.VersionFor(config.Direction, config.Variant), Config: config}}, nil
+	return &QuoteSession{gate: gate, policy: policy, ledger: ledger, execution: NewQuoteExecution(ledger), state: SessionState{Version: SessionVersion, Rule: rule, Config: config}}, nil
 }
 
 func (s *QuoteSession) emit(now time.Time, kind, order string, quantity int64) bool {
@@ -131,6 +139,10 @@ func (s *QuoteSession) cancelEntry(now time.Time) bool {
 	return s.emit(now, "cancel_requested", "entry", 0) && s.emit(now, "canceled", "entry", 0)
 }
 
+func (s *QuoteSession) canRequestExit() bool {
+	return !s.state.FirstFillAt.IsZero() && s.state.ExitIntentAt.IsZero()
+}
+
 func (s *QuoteSession) exit(now time.Time, reason string) bool {
 	if !s.state.ExitIntentAt.IsZero() || s.ledger.Snapshot().OpenQuantity == 0 {
 		return true
@@ -160,8 +172,10 @@ func (s *QuoteSession) advance(now time.Time) SessionOutcome {
 	if !s.state.EntryIntentAt.IsZero() && !now.Before(s.state.EntryIntentAt.Add(SyntheticEntryTTLSeconds*time.Second)) && !s.cancelEntry(now) {
 		return s.Stop(now, "ledger_cancel_rejected")
 	}
-	if !s.state.FirstFillAt.IsZero() && !now.Before(s.state.FirstFillAt.Add(r001.MaximumHold)) && !s.exit(now, "maximum_hold") {
-		return s.Stop(now, "ledger_exit_rejected")
+	if s.canRequestExit() {
+		if reason := s.policy.OnTimer(now, s.state.FirstFillAt); reason != "" && !s.exit(now, reason) {
+			return s.Stop(now, "ledger_exit_rejected")
+		}
 	}
 	if working(s.order("exit")) && !now.Before(s.state.ExitIntentAt.Add(SyntheticEntryTTLSeconds*time.Second)) {
 		return s.Stop(now, "exit_fill_timeout")
@@ -208,21 +222,25 @@ func (s *QuoteSession) Step(now time.Time, input SessionInput) SessionOutcome {
 		}
 		s.state.Observed++
 		if d.Decision != nil {
-			if s.state.Signal != nil || !d.Decision.At.Equal(input.Bar.Start.Add(time.Minute)) || d.Decision.At.After(now) || d.Decision.Boundary <= 0 || d.Decision.Boundary > marketdata.MaxPrice {
+			if s.state.Signal != nil || !d.Decision.At.Equal(input.Bar.Start.Add(time.Minute)) || d.Decision.At.After(now) ||
+				d.Decision.Boundary <= 0 || d.Decision.Boundary > marketdata.MaxPrice ||
+				d.Decision.Stop && (d.Decision.Accepted || d.Decision.Reason == "") {
 				return s.Stop(now, "strategy_decision_invalid")
 			}
-			s.state.Signal = &SessionSignal{ObservedAt: now, ReceivedAt: input.ReceivedAt, Decision: copyDecision(*d.Decision)}
+			s.state.Signal = &SessionSignal{ObservedAt: now, ReceivedAt: input.ReceivedAt, Decision: d.Decision.Clone()}
 			if d.Decision.Accepted {
 				s.state.EntryIntentAt = now
 				if !s.emit(now, "open_intent", "entry", SyntheticEntryQuantity) || !s.emit(now, "accepted", "entry", 0) {
 					return s.Stop(now, "ledger_entry_rejected")
 				}
-			} else if d.Decision.Reason != "volume_below_1_5x_previous_5" {
+			} else if d.Decision.Stop {
 				return s.Stop(now, d.Decision.Reason)
 			}
 		}
-		if s.state.Signal != nil && s.state.Signal.Decision.Accepted && r001.Reversed(s.state.Config.Direction, input.Bar.Close, s.state.Signal.Decision.Boundary) && !s.exit(now, "range_reversal") {
-			return s.Stop(now, "ledger_exit_rejected")
+		if signal := s.state.Signal; signal != nil && signal.Decision.Accepted && s.canRequestExit() {
+			if reason := s.policy.OnClose(input.Bar.Close, signal.Decision.Boundary); reason != "" && !s.exit(now, reason) {
+				return s.Stop(now, "ledger_exit_rejected")
+			}
 		}
 		if d.Complete {
 			if !s.ledger.Snapshot().CleanFinish {
@@ -252,24 +270,12 @@ func (s *QuoteSession) Step(now time.Time, input SessionInput) SessionOutcome {
 	}
 }
 
-func copyDecision(d r001.Decision) r001.Decision {
-	if d.Volume != nil {
-		v := *d.Volume
-		if v.SignalVolume != nil {
-			n := *v.SignalVolume
-			v.SignalVolume = &n
-		}
-		d.Volume = &v
-	}
-	return d
-}
-
 func (s *QuoteSession) Snapshot() SessionState {
 	state := s.state
 	state.Final = s.ledger.Snapshot()
 	if state.Signal != nil {
 		signal := *state.Signal
-		signal.Decision = copyDecision(signal.Decision)
+		signal.Decision = signal.Decision.Clone()
 		state.Signal = &signal
 	}
 	return state

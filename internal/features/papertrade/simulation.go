@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
-	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
 const Version = "synthetic-quantity-ledger-v0.1"
@@ -55,22 +55,22 @@ type Record struct {
 	Outcome Outcome `json:"outcome"`
 }
 type Snapshot struct {
-	Version           string         `json:"version"`
-	Symbol            string         `json:"symbol"`
-	Direction         r001.Direction `json:"direction"`
-	OpenQuantity      int64          `json:"open_quantity"`
-	SignedQuantity    int64          `json:"signed_quantity"`
-	PositionKnown     bool           `json:"position_known"`
-	Halted            bool           `json:"new_entries_halted"`
-	ReconcileRequired bool           `json:"reconcile_required"`
-	ActiveOrders      int            `json:"active_orders"`
-	RemainingQuantity int64          `json:"remaining_quantity"`
-	CleanFinish       bool           `json:"clean_finish"`
-	Orders            []Order        `json:"orders"`
-	Records           []Record       `json:"records"`
+	Version           string             `json:"version"`
+	Symbol            string             `json:"symbol"`
+	Direction         strategy.Direction `json:"direction"`
+	OpenQuantity      int64              `json:"open_quantity"`
+	SignedQuantity    int64              `json:"signed_quantity"`
+	PositionKnown     bool               `json:"position_known"`
+	Halted            bool               `json:"new_entries_halted"`
+	ReconcileRequired bool               `json:"reconcile_required"`
+	ActiveOrders      int                `json:"active_orders"`
+	RemainingQuantity int64              `json:"remaining_quantity"`
+	CleanFinish       bool               `json:"clean_finish"`
+	Orders            []Order            `json:"orders"`
+	Records           []Record           `json:"records"`
 }
 type Simulator struct {
-	direction         r001.Direction
+	direction         strategy.Direction
 	position          int64
 	halted, reconcile bool
 	orders            map[string]Order
@@ -83,8 +83,8 @@ type seenEvent struct {
 	outcome     Outcome
 }
 
-func New(direction r001.Direction) (*Simulator, error) {
-	if !r001.Valid(direction) {
+func New(direction strategy.Direction) (*Simulator, error) {
+	if !strategy.ValidDirection(direction) {
 		return nil, errors.New("合成台帳の方向を確認してください")
 	}
 	return &Simulator{direction: direction, orders: map[string]Order{}, seen: map[string]seenEvent{}, journal: []Record{}}, nil
@@ -319,7 +319,7 @@ func (s *Simulator) closeReserved() int64 {
 
 func (s *Simulator) Snapshot() Snapshot {
 	r := Snapshot{Version: Version, Symbol: "0000@1", Direction: s.direction, OpenQuantity: s.position, SignedQuantity: s.position, PositionKnown: !s.reconcile, Halted: s.halted, ReconcileRequired: s.reconcile, ActiveOrders: s.activeOrders(), Orders: []Order{}, Records: append([]Record{}, s.journal...)}
-	if s.direction == r001.Short {
+	if s.direction == strategy.Short {
 		r.SignedQuantity = -r.SignedQuantity
 	}
 	for _, o := range s.orders {
@@ -334,10 +334,10 @@ func (s *Simulator) Snapshot() Snapshot {
 }
 
 type checkpoint struct {
-	Version     string         `json:"version"`
-	Direction   r001.Direction `json:"direction"`
-	Events      []Event        `json:"synthetic_events"`
-	StateSHA256 string         `json:"state_sha256"`
+	Version     string             `json:"version"`
+	Direction   strategy.Direction `json:"direction"`
+	Events      []Event            `json:"synthetic_events"`
+	StateSHA256 string             `json:"state_sha256"`
 }
 
 func (s *Simulator) Checkpoint() ([]byte, error) {

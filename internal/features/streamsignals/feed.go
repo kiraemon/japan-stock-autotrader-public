@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
-	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
 const Version = "closed-minute-delivery-v0.1"
@@ -19,11 +19,11 @@ const SyntheticCloseLag = 2 * time.Second
 const SyntheticArrivalDeadline = 10 * time.Second
 
 type Config struct {
-	Date      string         `json:"date_jst"`
-	Symbol    string         `json:"symbol"`
-	Origin    string         `json:"origin"`
-	Direction r001.Direction `json:"direction"`
-	Variant   r001.Variant   `json:"variant"`
+	Date      string             `json:"date_jst"`
+	Symbol    string             `json:"symbol"`
+	Origin    string             `json:"origin"`
+	Direction strategy.Direction `json:"direction"`
+	Variant   strategy.Variant   `json:"variant"`
 }
 
 type Observation struct {
@@ -38,9 +38,9 @@ type Outcome struct {
 }
 
 type Signal struct {
-	ObservedAt time.Time     `json:"observed_at"`
-	ReceivedAt time.Time     `json:"received_at"`
-	Decision   r001.Decision `json:"decision"`
+	ObservedAt time.Time         `json:"observed_at"`
+	ReceivedAt time.Time         `json:"received_at"`
+	Decision   strategy.Decision `json:"decision"`
 }
 
 type State struct {
@@ -54,21 +54,27 @@ type State struct {
 	Signals    []Signal  `json:"signals"`
 }
 
+// EntryEvaluator sees bars after the feed has checked their identity, order,
+// receipt time and quality. A nil decision means no signal for this bar.
+type EntryEvaluator interface {
+	Observe(now time.Time, bar marketdata.Bar) (*strategy.Decision, error)
+}
+
 type Feed struct {
 	config           Config
-	scanner          *r001.Scanner
+	evaluator        EntryEvaluator
 	start, lastClock time.Time
 	seen             map[time.Time][32]byte
 	state            State
 }
 
-func New(config Config) (*Feed, error) {
-	scanner, err := r001.NewScanner(config.Date, config.Direction, config.Variant)
-	if err != nil || (config.Origin != "synthetic" && config.Origin != "observed") || config.Symbol != "0000@1" && config.Origin == "synthetic" {
+func New(config Config, rule string, evaluator EntryEvaluator) (*Feed, error) {
+	start := marketdata.Clock(config.Date, 9, 0)
+	if evaluator == nil || rule == "" || marketdata.Date(start) != config.Date || !strategy.ValidDirection(config.Direction) ||
+		(config.Origin != "synthetic" && config.Origin != "observed") || config.Symbol != "0000@1" && config.Origin == "synthetic" {
 		return nil, errors.New("確定足入力の設定を確認してください")
 	}
-	start := marketdata.Clock(config.Date, 9, 0)
-	return &Feed{config: config, scanner: scanner, start: start, seen: map[time.Time][32]byte{}, state: State{Version: Version, Rule: r001.VersionFor(config.Direction, config.Variant), NextStart: start, Signals: []Signal{}}}, nil
+	return &Feed{config: config, evaluator: evaluator, start: start, seen: map[time.Time][32]byte{}, state: State{Version: Version, Rule: rule, NextStart: start, Signals: []Signal{}}}, nil
 }
 
 func (f *Feed) halt(reason string) Outcome {
@@ -139,17 +145,20 @@ func (f *Feed) Offer(now time.Time, observation Observation) Outcome {
 	if received.After(end.Add(SyntheticArrivalDeadline)) || now.After(end.Add(SyntheticArrivalDeadline)) {
 		return f.halt("minute_arrival_timeout")
 	}
-	decision, err := f.scanner.Observe(now, b)
+	decision, err := f.evaluator.Observe(now, b)
 	if err != nil {
 		return f.halt("scanner_input_rejected")
+	}
+	if decision != nil && (!decision.At.Equal(end) || decision.Stop && (decision.Accepted || decision.Reason == "")) {
+		return f.halt("strategy_decision_invalid")
 	}
 	f.seen[key] = fingerprint
 	f.state.Observed++
 	f.state.NextStart = f.start.Add(time.Duration(f.state.Observed) * time.Minute)
 	f.state.Complete = f.state.Observed == 111
 	if decision != nil {
-		f.state.Signals = append(f.state.Signals, Signal{ObservedAt: now, ReceivedAt: received, Decision: *decision})
-		if !decision.Accepted && decision.Reason != "volume_below_1_5x_previous_5" {
+		f.state.Signals = append(f.state.Signals, Signal{ObservedAt: now, ReceivedAt: received, Decision: decision.Clone()})
+		if decision.Stop {
 			return f.halt(decision.Reason)
 		}
 	}
@@ -174,14 +183,7 @@ func (f *Feed) Snapshot() State {
 	s := f.state
 	s.Signals = append([]Signal{}, f.state.Signals...)
 	for i := range s.Signals {
-		if volume := s.Signals[i].Decision.Volume; volume != nil {
-			copy := *volume
-			if volume.SignalVolume != nil {
-				quantity := *volume.SignalVolume
-				copy.SignalVolume = &quantity
-			}
-			s.Signals[i].Decision.Volume = &copy
-		}
+		s.Signals[i].Decision = s.Signals[i].Decision.Clone()
 	}
 	return s
 }
