@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,6 +23,7 @@ func TestSessionDemoAllDirectionsAndVariantsAreReproducible(t *testing.T) {
 		for _, variant := range []string{"A", "B"} {
 			t.Run(direction+variant, func(t *testing.T) {
 				t.Chdir(t.TempDir())
+				var outputs []string
 				for repeat := 0; repeat < 2; repeat++ {
 					var out bytes.Buffer
 					if err := run(context.Background(), []string{"session-demo", "-direction", direction, "-variant", variant}, &out); err != nil {
@@ -30,6 +32,7 @@ func TestSessionDemoAllDirectionsAndVariantsAreReproducible(t *testing.T) {
 					if strings.Count(out.String(), "passed=true") != 8 || !strings.Contains(out.String(), "forward_test=false / live_submission_capability=false") {
 						t.Fatal("case count or scope", out.String())
 					}
+					outputs = append(outputs, out.String())
 				}
 				files, _ := filepath.Glob("data/research/session-simulation-*.json")
 				if len(files) != 2 {
@@ -50,6 +53,23 @@ func TestSessionDemoAllDirectionsAndVariantsAreReproducible(t *testing.T) {
 				}
 				if json.Unmarshal(left, &report) != nil || report.Forward {
 					t.Fatal("report")
+				}
+				for repeat, output := range outputs {
+					var lines []string
+					for line := range strings.SplitSeq(output, "\n") {
+						if strings.HasPrefix(line, "case=") {
+							lines = append(lines, line)
+						}
+					}
+					if len(lines) != len(report.Cases) {
+						t.Fatalf("run %d: CLI printed %d cases, JSON contains %d", repeat+1, len(lines), len(report.Cases))
+					}
+					for i, c := range report.Cases {
+						suffix := fmt.Sprintf(" / reason=%s / open_quantity=%d", c.Final.StopReason, c.Final.Final.OpenQuantity)
+						if !strings.HasPrefix(lines[i], "case="+c.Name+" / ") || !strings.HasSuffix(lines[i], suffix) {
+							t.Fatalf("run %d: case %s: line %q must end with %q", repeat+1, c.Name, lines[i], suffix)
+						}
+					}
 				}
 				for _, c := range report.Cases {
 					if !c.Passed {
