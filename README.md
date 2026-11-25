@@ -48,12 +48,14 @@ python -B -m unittest discover -s research/python -t research/python -v
 | [起動CLI](cmd) | オフライン研究、読み取り収集、ローカル表示の組み立て |
 | [Pythonの研究コード](research/python/macd_backtest) | 2分足MACD、模擬バックテスト、別実装による計算の照合 |
 
-詳しい流れは [アーキテクチャ](docs/ARCHITECTURE.md) と [起動手順](docs/QUICKSTART.md) にあります。
+[アーキテクチャ](docs/explanation/architecture.md)と[ドキュメント一覧](docs/README.md)から、設計の解説や起動手順を参照できます。
 
 ## 開発フロー
 
 AI-DLCで合意した受入条件を、ローカルとGitHub Actionsで共通の検証につなげます。
 
 ![AIが要件整理と実装を行い、人間が受入条件とマージを判断する開発フロー。AGENTS.mdは設計書と共通の検証コマンドを案内します。](docs/images/development-flow.png)
+
+[Mermaidで詳しい開発フローを見る](docs/explanation/development-flow.md)
 
 コードと合成テストを公開しています。利用者が取得した市場データや運用記録は各自のローカル環境で扱います。プロジェクトのソースコードにはオープンソースライセンスを付与しておらず、権利は権利者に留保されます。GitHub上での閲覧・フォークにはGitHubの利用規約が適用されます。
