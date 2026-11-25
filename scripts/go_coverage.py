@@ -96,8 +96,35 @@ def print_result(label, covered, total, floor):
     return passed
 
 
+def measure_statements(work):
+    profile = work / "statements.out"
+    print("Measuring Go statements", flush=True)
+    run(("go", "test", "-count=1", "-coverpkg=./...", "-covermode=atomic", f"-coverprofile={profile}", "./..."), ROOT)
+    return print_result("C0 statements", *statement_coverage(profile), STATEMENT_FLOOR)
+
+
+def measure_branches(work, jobs):
+    gobco = shutil.which("gobco")
+    if gobco is None or run((gobco, "-version"), ROOT).strip() != GOBCO_VERSION:
+        raise RuntimeError(f"Install gobco: go install github.com/rillig/gobco@v{GOBCO_VERSION}")
+    packages = go_packages()
+    module = work / "module"
+    copy_for_gobco(module, packages)
+    source_packages = [package for package in packages if package.get("GoFiles") or package.get("CgoFiles")]
+    print(f"Measuring gobco branches in {len(source_packages)} Go packages", flush=True)
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
+        results = executor.map(lambda package: branch_coverage(package, gobco, module, work / "branches"), source_packages)
+        covered_total, branch_total = 0, 0
+        for relative, covered, total in results:
+            print(f"  {relative}: {covered}/{total}", flush=True)
+            covered_total += covered
+            branch_total += total
+    return print_result("C1 gobco branches", covered_total, branch_total, BRANCH_FLOOR)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--metric", choices=("all", "c0", "c1"), default="all", help="Coverage metric to measure.")
     parser.add_argument("--report-only", action="store_true", help="Report unmet targets with exit 0. Measurement errors still fail.")
     parser.add_argument("--jobs", type=int, default=2, help="Concurrent gobco packages (default: 2).")
     args = parser.parse_args()
@@ -105,33 +132,17 @@ def main():
         parser.error("--jobs must be positive")
 
     try:
-        gobco = shutil.which("gobco")
-        if gobco is None or run((gobco, "-version"), ROOT).strip() != GOBCO_VERSION:
-            raise RuntimeError(f"Install gobco: go install github.com/rillig/gobco@v{GOBCO_VERSION}")
-        packages = go_packages()
+        outcomes = []
         with TemporaryDirectory(prefix="go-coverage-") as temporary:
             work = Path(temporary)
-            profile = work / "statements.out"
-            print("Measuring Go statements", flush=True)
-            run(("go", "test", "-count=1", "-coverpkg=./...", "-covermode=atomic", f"-coverprofile={profile}", "./..."), ROOT)
-            c0_pass = print_result("C0 statements", *statement_coverage(profile), STATEMENT_FLOOR)
-
-            module = work / "module"
-            copy_for_gobco(module, packages)
-            source_packages = [package for package in packages if package.get("GoFiles") or package.get("CgoFiles")]
-            print(f"Measuring gobco branches in {len(source_packages)} Go packages", flush=True)
-            with ThreadPoolExecutor(max_workers=args.jobs) as executor:
-                results = executor.map(lambda package: branch_coverage(package, gobco, module, work / "branches"), source_packages)
-                covered_total, branch_total = 0, 0
-                for relative, covered, total in results:
-                    print(f"  {relative}: {covered}/{total}", flush=True)
-                    covered_total += covered
-                    branch_total += total
-            c1_pass = print_result("C1 gobco branches", covered_total, branch_total, BRANCH_FLOOR)
+            if args.metric in ("all", "c0"):
+                outcomes.append(measure_statements(work))
+            if args.metric in ("all", "c1"):
+                outcomes.append(measure_branches(work, args.jobs))
     except (OSError, RuntimeError, ValueError) as error:
         print(f"Coverage measurement failed: {error}", file=sys.stderr)
         return 2
-    return 0 if args.report_only or (c0_pass and c1_pass) else 1
+    return 0 if args.report_only or all(outcomes) else 1
 
 
 if __name__ == "__main__":

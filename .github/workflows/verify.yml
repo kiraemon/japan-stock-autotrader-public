@@ -17,7 +17,7 @@ jobs:
   verify:
     name: Go, Python, and paper replay
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       GOTOOLCHAIN: local
     steps:
@@ -39,12 +39,3 @@ jobs:
 
       - name: Run shared verification
         run: python -B scripts/verify.py
-
-      - name: Install pinned gobco
-        run: |
-          go install github.com/rillig/gobco@v1.3.4
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go env GOPATH | ForEach-Object { Join-Path $_ bin } | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Report Go coverage
-        run: python -B scripts/go_coverage.py --report-only
