@@ -1,6 +1,45 @@
 # アーキテクチャ
 
-起動CLIが、データの受け取り方と各処理を組み立てます。戦略は公開型の市場データを受け取り、判断を返す役割です。
+## コンポーネント構成
+
+公開版の主なGoコンポーネントを示します。矢印は、呼び出す側から利用する側に向いています。
+
+```mermaid
+flowchart TB
+  subgraph Cli["起動CLI"]
+    Capture["データ収集<br/>jquants-capture・kabu-readonly"]
+    Research["合成再生・研究<br/>kabu-research"]
+    Inspect["閲覧・点検<br/>kabu-dashboard・kabu-inspect"]
+  end
+
+  subgraph Components["Goのコンポーネント"]
+    Adapters["取得アダプタ<br/>jquantsbulk・jquantscli・kabu"]
+    Gate["入力ゲート<br/>streamsignals"]
+    Paper["仮想約定・数量台帳・復元<br/>papertrade"]
+    View["ローカル表示・品質点検<br/>dashboard・inspectquality・inspecthistory"]
+    Strategy["戦略判断<br/>strategy/r001"]
+    Market["共通の市場データ型<br/>marketdata"]
+  end
+
+  Capture --> Adapters
+  Research --> Gate
+  Research --> Paper
+  Inspect --> View
+  Gate --> Strategy
+  Paper --> Strategy
+  Strategy --> Market
+```
+
+| 境界 | 受け渡し・責務 |
+| --- | --- |
+| 外部データ | 取得アダプタがJ-Quantsまたはkabuステーションへ接続し、収集CLIが取得結果をローカルに保存します。 |
+| ローカルの入力と結果 | 研究CLIは組み込みの合成入力や保存済みデータを使い、再生結果を保存します。閲覧・点検CLIは保存された観測結果を参照します。 |
+| 分割イベント記録 | [paperrecordingv3](../../internal/paperrecordingv3)は、イベントをハッシュでつないで保存し、破損や途中終了時には再読込できた範囲を返します。 |
+| Pythonの研究 | [MACDバックテスト](../../research/python/macd_backtest)は、合成分足、シグナル、仮想売買の計算をPythonで再現します。 |
+
+起動CLIが入力の受け取り方と各処理を組み立てます。戦略は共通の市場データ型を受け取って判断を返し、仮想約定と数量台帳は `papertrade` が担当します。
+
+## ペーパー取引の処理フロー
 
 ```mermaid
 flowchart LR
@@ -14,7 +53,7 @@ flowchart LR
 
 - 戦略判断は確定時刻までに得た足を使います。仮想約定では、注文意図より後の気配の時刻と表示数量を検査します。
 - 入力途絶や受付不明はそれぞれ状態として残します。未解消の仮想数量が残る場合は、その数量を確認できる形で止めます。
-- 数量台帳のチェックポイントはペーパー取引の復元に使います。分割イベント記録器は別の部品で、入力ごとにハッシュをつなぎ、破損や途中終了時は検証できた範囲を返します。
+- 数量台帳のチェックポイントはペーパー取引の復元に使います。
 - 外部接続の組み立ては `cmd` が担当します。依存境界は `internal/architecture` のテストで確認します。
 
 公開版で確認できるのは、合成シナリオに対する実装と再現性です。市場での収益や実約定は別の評価になります。
