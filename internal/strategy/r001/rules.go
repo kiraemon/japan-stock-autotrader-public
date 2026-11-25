@@ -6,16 +6,18 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
-type Direction string
-type Variant string
+type Direction = strategy.Direction
+type Variant = strategy.Variant
 
 const (
-	Long  Direction = "long"
-	Short Direction = "short"
-	A     Variant   = "A"
-	B     Variant   = "B"
+	Long          = strategy.Long
+	Short         = strategy.Short
+	A     Variant = "A"
+	B     Variant = "B"
 )
 
 func ValidVariant(v Variant) bool { return v == A || v == B }
@@ -23,12 +25,7 @@ func VersionFor(d Direction, v Variant) string {
 	return strings.TrimSuffix(Version(d), "A") + string(v)
 }
 
-type VolumeDecision struct {
-	Passed       bool   `json:"passed"`
-	Reason       string `json:"reason"`
-	SignalVolume *int64 `json:"signal_volume_shares"`
-	PreviousSum  string `json:"previous_5_volume_sum"`
-}
+type VolumeDecision = strategy.VolumeDecision
 
 // VolumeFilter compares integers exactly, including sums larger than int64.
 func VolumeFilter(signal *int64, previous []*int64) VolumeDecision {
@@ -60,7 +57,7 @@ func VolumeFilter(signal *int64, previous []*int64) VolumeDecision {
 	return r
 }
 
-func Valid(d Direction) bool { return d == Long || d == Short }
+func Valid(d Direction) bool { return strategy.ValidDirection(d) }
 func Version(d Direction) string {
 	if d == Short {
 		return "R001-S-v0.1-A"
@@ -86,3 +83,23 @@ func SignalWindow(start time.Time) bool {
 }
 
 const MaximumHold = 20 * time.Minute
+
+// SessionExit applies R001's two exit rules to the session's supplied clock
+// and completed close price. It returns an empty reason to keep holding.
+type SessionExit struct {
+	Direction Direction
+}
+
+func (SessionExit) OnTimer(now, firstFillAt time.Time) string {
+	if !now.Before(firstFillAt.Add(MaximumHold)) {
+		return "maximum_hold"
+	}
+	return ""
+}
+
+func (p SessionExit) OnClose(close, boundary int64) string {
+	if Reversed(p.Direction, close, boundary) {
+		return "range_reversal"
+	}
+	return ""
+}

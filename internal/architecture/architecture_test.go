@@ -37,9 +37,16 @@ func restrictedCore(name string) bool {
 	return false
 }
 
-func importViolation(source, imported string) string {
+func importViolation(file, imported string) string {
+	source := path.Dir(file)
 	if strings.HasPrefix(imported, internalPrefix) {
 		target := strings.TrimPrefix(imported, internalPrefix)
+		switch file {
+		case "features/streamsignals/feed.go", "features/papertrade/session.go", "features/papertrade/simulation.go", "features/papertrade/quote_execution.go":
+			if strings.HasPrefix(target, "strategy/") {
+				return "具体的な戦略への直接依存です。cmdで戦略を組み立て、共通の契約を渡してください"
+			}
+		}
 		if a, b := feature(source), feature(target); a != "" && b != "" && a != b {
 			return "スライス間の直接依存です。cmdで組み立てるか、必要な小さな共有契約を定義してください"
 		}
@@ -88,13 +95,13 @@ func checkBoundaries(files fs.FS) ([]string, error) {
 			return fmt.Errorf("%s: importの構文を確認してください", name)
 		}
 		count++
-		source := strings.TrimPrefix(path.Dir(name), "internal/")
+		file := strings.TrimPrefix(name, "internal/")
 		for _, item := range parsed.Imports {
 			imported, err := strconv.Unquote(item.Path.Value)
 			if err != nil {
 				return fmt.Errorf("%s: importの形式を確認してください", name)
 			}
-			if reason := importViolation(source, imported); reason != "" {
+			if reason := importViolation(file, imported); reason != "" {
 				violations = append(violations, fmt.Sprintf("%s -> %s: %s", name, imported, reason))
 			}
 		}
@@ -122,6 +129,8 @@ func TestImportBoundaryChecksRejectViolations(t *testing.T) {
 	}{
 		{"feature_to_feature", "features/backtest/run.go", internalPrefix + "features/buildbars"},
 		{"strategy_to_broker", "strategy/r001/rules.go", internalPrefix + "kabu"},
+		{"gate_to_concrete_strategy", "features/streamsignals/feed.go", internalPrefix + "strategy/r001"},
+		{"session_to_concrete_strategy", "features/papertrade/session.go", internalPrefix + "strategy/other"},
 		{"paper_to_network", "features/papertrade/send.go", "net/http"},
 		{"history_candidates_to_files", "features/streambars/feed.go", "os"},
 		{"orb_inputs_to_network", "features/prepareorb/opening.go", "net/http"},

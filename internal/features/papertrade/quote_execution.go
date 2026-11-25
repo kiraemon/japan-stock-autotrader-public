@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
-	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 )
 
 const QuoteExecutionVersion = "synthetic-fresh-quote-execution-v0.1"
@@ -84,7 +84,7 @@ func (e *QuoteExecution) TryFill(orderID string, now time.Time, q marketdata.Quo
 			return block("stale_quote")
 		}
 	}
-	buy := s.Direction == r001.Long && order.Purpose == "open" || s.Direction == r001.Short && order.Purpose == "close"
+	buy := s.Direction == strategy.Long && order.Purpose == "open" || s.Direction == strategy.Short && order.Purpose == "close"
 	side := q.Bid
 	if buy {
 		side = q.Ask
@@ -93,7 +93,7 @@ func (e *QuoteExecution) TryFill(orderID string, now time.Time, q marketdata.Quo
 	// checkpoints. A quote must be newer than the last fill's observation time.
 	buyOrders := map[string]bool{}
 	for _, prior := range s.Orders {
-		buyOrders[prior.ID] = s.Direction == r001.Long && prior.Purpose == "open" || s.Direction == r001.Short && prior.Purpose == "close"
+		buyOrders[prior.ID] = s.Direction == strategy.Long && prior.Purpose == "open" || s.Direction == strategy.Short && prior.Purpose == "close"
 	}
 	for _, record := range s.Records {
 		if record.Event.Kind == "fill" && record.Outcome.Accepted && buyOrders[record.Event.OrderID] == buy && !side.Time.After(record.Event.At) {

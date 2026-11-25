@@ -37,11 +37,20 @@ func (g sessionGate) Tick(now time.Time) papertrade.MinuteDelivery {
 }
 
 func makeSession(config papertrade.SessionConfig) (*papertrade.QuoteSession, error) {
-	gate, err := streamsignals.New(streamsignals.Config{Date: config.Date, Symbol: config.Symbol, Origin: config.Origin, Direction: config.Direction, Variant: config.Variant})
+	evaluator, err := r001.NewScanner(config.Date, config.Direction, config.Variant)
 	if err != nil {
 		return nil, err
 	}
-	return papertrade.NewQuoteSession(config, sessionGate{gate})
+	rule := r001.VersionFor(config.Direction, config.Variant)
+	return makeSessionWithStrategy(config, rule, evaluator, r001.SessionExit{Direction: config.Direction})
+}
+
+func makeSessionWithStrategy(config papertrade.SessionConfig, rule string, evaluator streamsignals.EntryEvaluator, policy papertrade.ExitPolicy) (*papertrade.QuoteSession, error) {
+	gate, err := streamsignals.New(streamsignals.Config{Date: config.Date, Symbol: config.Symbol, Origin: config.Origin, Direction: config.Direction, Variant: config.Variant}, rule, evaluator)
+	if err != nil {
+		return nil, err
+	}
+	return papertrade.NewQuoteSession(config, rule, sessionGate{gate}, policy)
 }
 
 type sessionAction struct {

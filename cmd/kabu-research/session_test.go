@@ -15,6 +15,7 @@ import (
 
 	"github.com/kiraemon/japan-stock-trading-lab/internal/features/papertrade"
 	"github.com/kiraemon/japan-stock-trading-lab/internal/marketdata"
+	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy"
 	"github.com/kiraemon/japan-stock-trading-lab/internal/strategy/r001"
 )
 
@@ -137,6 +138,132 @@ func TestSessionDemoAllDirectionsAndVariantsAreReproducible(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type fixtureSessionStrategy struct {
+	entryBarStart time.Time
+	decisionDelay time.Duration
+}
+
+func (f fixtureSessionStrategy) Observe(_ time.Time, bar marketdata.Bar) (*strategy.Decision, error) {
+	if !bar.Start.Equal(f.entryBarStart) {
+		return nil, nil
+	}
+	return &strategy.Decision{
+		At: bar.Start.Add(time.Minute + f.decisionDelay), Boundary: bar.Close, Accepted: true, Reason: "fixture_entry",
+	}, nil
+}
+
+func (fixtureSessionStrategy) OnTimer(now, firstFillAt time.Time) string {
+	if !now.Before(firstFillAt.Add(5 * time.Second)) {
+		return "fixture_timer_exit"
+	}
+	return ""
+}
+
+func (fixtureSessionStrategy) OnClose(_, _ int64) string { return "" }
+
+func TestSessionCanUseAnInjectedStrategyAndRestoreItsLedger(t *testing.T) {
+	fixtures, err := sessionFixtures(r001.Long, r001.A)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input sessionCaseInput
+	for _, candidate := range fixtures {
+		if candidate.Name == "silence_with_exposure" {
+			input = candidate
+			break
+		}
+	}
+	if len(input.Actions) == 0 {
+		t.Fatal("missing silence-with-exposure fixture")
+	}
+	entryBar := marketdata.Clock(input.Config.Date, 9, 15)
+	policy := fixtureSessionStrategy{entryBarStart: entryBar}
+	session, err := makeSessionWithStrategy(input.Config, "fixture-strategy-v1", policy, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Feed the exact existing minutes and partial fill up to the silence event.
+	for _, action := range input.Actions[:len(input.Actions)-1] {
+		if out := session.Step(action.At, action.Input); !out.Accepted {
+			t.Fatalf("%s: %+v", action.Name, out)
+		}
+	}
+	before := session.Snapshot()
+	if before.Rule != "fixture-strategy-v1" || before.Signal == nil || before.Signal.Decision.Reason != "fixture_entry" || before.Final.OpenQuantity != 40 {
+		t.Fatal("injected entry was not reflected in the shared ledger", before)
+	}
+	exitAt := before.FirstFillAt.Add(5 * time.Second)
+	if out := session.Step(exitAt, papertrade.SessionInput{Kind: "tick"}); !out.Accepted {
+		t.Fatal(out)
+	}
+	exiting := session.Snapshot()
+	if !exiting.ExitIntentAt.Equal(exitAt) || exiting.ExitReason != "fixture_timer_exit" {
+		t.Fatal("injected exit was not used", exiting)
+	}
+
+	ledger, err := papertrade.New(exiting.Final.Direction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range exiting.Final.Records {
+		if result := ledger.Apply(record.Event); result != record.Outcome {
+			t.Fatalf("replay of %s: got %+v, want %+v", record.Event.ID, result, record.Outcome)
+		}
+	}
+	checkpoint, err := ledger.Checkpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := papertrade.Restore(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := json.Marshal(exiting.Final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(reopened.Snapshot())
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatal("restored ledger differs from the session ledger", err)
+	}
+
+	marketAt := exitAt.Add(time.Second)
+	receivedAt := marketAt.Add(100 * time.Millisecond)
+	quote, err := marketdata.KabuBoardQuote(syntheticBoard(marketAt, 40), "0000@1", "test", receivedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quote.Origin = "synthetic"
+	out := session.Step(receivedAt, papertrade.SessionInput{Kind: "quote", Quote: &quote})
+	if !out.Accepted || out.Fill == nil || !out.Fill.Filled || out.Fill.Delta != 40 || session.Snapshot().Final.OpenQuantity != 0 {
+		t.Fatal("shared virtual exit did not close the remaining quantity", out)
+	}
+}
+
+func TestSessionRejectsMissingStrategyAndInvalidDecisionTime(t *testing.T) {
+	fixtures, err := sessionFixtures(r001.Long, r001.A)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := fixtures[0]
+	first := input.Actions[0]
+	policy := fixtureSessionStrategy{entryBarStart: first.Input.Bar.Start, decisionDelay: time.Minute}
+	if _, err := makeSessionWithStrategy(input.Config, "fixture", nil, policy); err == nil {
+		t.Fatal("missing entry evaluator accepted")
+	}
+	if _, err := makeSessionWithStrategy(input.Config, "fixture", policy, nil); err == nil {
+		t.Fatal("missing exit policy accepted")
+	}
+	session, err := makeSessionWithStrategy(input.Config, "fixture", policy, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := session.Step(first.At, first.Input)
+	if out.Accepted || out.Reason != "strategy_decision_invalid" || len(session.Snapshot().Final.Orders) != 0 {
+		t.Fatal("invalid decision created a virtual order", out)
 	}
 }
 
