@@ -6,20 +6,22 @@ AI-DLCで決めた受入条件を、ローカルとCIで再実行できる検証
 
 ```mermaid
 flowchart LR
-    I["Inception<br/>AIが要件を整理<br/>人間が受入条件を決定"]
+    I["Inception<br/>Issueに目的と受入条件<br/>人間が合意"]
     B["Construction<br/>AIが実装<br/>ローカルで検証"]
     C["GitHub Actions<br/>PRで同じ検証を実行"]
     O["Operations<br/>人間が結果を確認<br/>mainへの反映を判断"]
-    I -->|受入条件| B
+    I -->|合意した条件| B
     B -->|PR| C
     C -->|検証結果| O
 ```
 
-- **Inception**では、目的、変更範囲、期待する結果を明確にします。合成ケースと確認する結果を決めておくと、PRでその条件を直接検証できます。
-- **Construction**では、AIが変更を実装し、受入条件に対応する検証を実行します。PRに変更理由、確認結果、未確認の項目を残します。
-- **Operations**では、人間が差分と検証結果を見てマージを判断します。再発した問題は、次回も再現できる合成テストや設計上のルールに反映します。
+- **Inception**では、動作や設計を変えるときにGitHub Issueへ目的、変更範囲、受入条件、検証方法を記録します。人間と合意した内容や、後から条件を変えた理由も同じIssueに残します。誤字修正など、受入条件が自明な変更はPRの説明だけで進められます。
+- **Construction**では、AIが変更を実装し、受入条件に対応する検証を実行します。PRからIssueにリンクし、各条件の確認結果、Actionsの結果、未確認の項目を記録します。対応が完了するPRでは `Closes #番号` を使うと、`main` へのマージ時にIssueも閉じます。
+- **Operations**では、人間が差分とPRの検証結果を見てマージを判断します。マージ後は `main` のCIで統合後も検証が通ることを確認します。作業中に見つかった改善は、再現できる合成テスト、参照する文書、次のIssueのうち、再利用しやすい形で残します。
 
 CIで失敗した場合は、失敗した条件をAIが読み取り、修正後に同じ検証を再実行します。
+
+合成セッションの残数量を表示する変更では、[Issue #3](https://github.com/kiraemon/japan-stock-trading-lab/issues/3)で正常終了・気配途絶・台帳との一致を受入条件に定め、[PR #4](https://github.com/kiraemon/japan-stock-trading-lab/pull/4)に各条件の検証結果を記録しました。利用時に参照する表示項目の意味は[コマンドリファレンス](../reference/verification-commands.md)に記載します。
 
 ## ハーネスとCIの接点
 
