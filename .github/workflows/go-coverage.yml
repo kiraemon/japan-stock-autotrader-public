@@ -102,7 +102,9 @@ jobs:
             const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const body = [
               marker,
-              '### Goカバレッジ',
+              '### 対象Goコードのカバレッジ',
+              '',
+              '過去研究の再現専用ファイルを除いた集計です。',
               '',
               '| 指標 | 実測 | 目標 | 状態 |',
               '| --- | ---: | ---: | --- |',

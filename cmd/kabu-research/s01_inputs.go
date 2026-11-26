@@ -100,17 +100,6 @@ type s01InputIndex struct {
 	NewPNL            bool           `json:"new_pnl_evaluation"`
 }
 
-func pinnedInput(path, expected string) ([]byte, error) {
-	raw, err := readInput(path)
-	if err != nil {
-		return nil, err
-	}
-	if len(expected) != 64 || hash(raw) != expected {
-		return nil, errors.New("固定した研究入力のhashが一致しません")
-	}
-	return raw, nil
-}
-
 func runS01Inputs(ctx context.Context, args []string, out io.Writer) error {
 	return runS01InputsMode(ctx, args, out, false)
 }

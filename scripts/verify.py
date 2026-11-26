@@ -10,6 +10,7 @@ def main() -> int:
     checks = (
         ("Go tests", ("go", "test", "-count=1", "./...")),
         ("Go vet", ("go", "vet", "./...")),
+        ("Go coverage harness tests", (sys.executable, "-B", "-m", "unittest", "discover", "-s", "scripts", "-p", "test_go_coverage.py")),
         (
             "Synthetic paper session",
             ("go", "run", "./cmd/kabu-research", "session-demo", "-direction", "long", "-variant", "A"),
