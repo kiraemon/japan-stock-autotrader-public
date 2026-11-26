@@ -6,6 +6,17 @@ import (
 	"path/filepath"
 )
 
+func pinnedInput(path, expected string) ([]byte, error) {
+	raw, err := readInput(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(expected) != 64 || hash(raw) != expected {
+		return nil, errors.New("固定した研究入力のhashが一致しません")
+	}
+	return raw, nil
+}
+
 // Content-addressed artifacts keep references stable across offline reruns.
 // Only a freshly generated duplicate is removed; existing data is hash checked.
 func saveContentAddressed(prefix string, value any) (string, []byte, error) {
