@@ -17,7 +17,7 @@ def main() -> int:
         ),
         ("Synthetic paper ledger", ("go", "run", "./cmd/kabu-research", "paper-demo")),
         (
-            "Python MACD tests",
+            "Python research tests",
             (sys.executable, "-B", "-m", "unittest", "discover", "-s", "research/python", "-t", "research/python", "-v"),
         ),
     )
