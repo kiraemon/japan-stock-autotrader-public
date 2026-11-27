@@ -35,13 +35,17 @@ func NewQuoteExecution(ledger *Simulator) *QuoteExecution {
 }
 
 func (e *QuoteExecution) TryFill(orderID string, now time.Time, q marketdata.Quote) QuoteFill {
+	return e.tryFill(orderID, now, q, false)
+}
+
+func (e *QuoteExecution) tryFill(orderID string, now time.Time, q marketdata.Quote, recoveryClose bool) QuoteFill {
 	r := QuoteFill{At: now}
 	block := func(reason string) QuoteFill { r.Reason = reason; return r }
 	if e.ledger == nil {
 		return block("ledger_unavailable")
 	}
 	s := e.ledger.Snapshot()
-	if !s.PositionKnown || s.Halted {
+	if !s.PositionKnown || (s.Halted && !recoveryClose) {
 		return block("ledger_halted_or_unknown")
 	}
 	if q.Origin != "synthetic" || q.Symbol != "0000@1" || q.Environment != "test" {
@@ -54,6 +58,9 @@ func (e *QuoteExecution) TryFill(orderID string, now time.Time, q marketdata.Quo
 			order = o
 			break
 		}
+	}
+	if recoveryClose && order.Purpose != "close" {
+		return block("recovery_close_required")
 	}
 	for _, record := range s.Records {
 		if record.Outcome.Accepted && record.Event.OrderID == orderID && (record.Event.Kind == "open_intent" || record.Event.Kind == "close_intent") {
